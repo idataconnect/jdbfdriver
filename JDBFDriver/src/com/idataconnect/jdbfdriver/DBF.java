@@ -525,7 +525,7 @@ public class DBF {
 
     /**
      * Checks if the current record is deleted.
-     * @return
+     * @return whether the current record is deleted.
      */
     public boolean deleted() {
         return currentRecordDeleted;
