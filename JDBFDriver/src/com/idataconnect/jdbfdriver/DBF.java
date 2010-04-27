@@ -45,32 +45,45 @@ import java.util.Iterator;
 
 /**
  * <p>The main class for DBF interaction.</p>
- * <p>Example usage:
+ * <p>Example usage:<br/>
 <code>
-DBF dbf = DBF.use("test.dbf");
-dbf.appendBlank();
-dbf.replace("TEST", "Testing");
-dbf.close();
+DBF dbf = DBF.use("test.dbf");<br/>
+dbf.appendBlank();<br/>
+dbf.replace("TEST", "Testing");<br/>
+dbf.close();<br/>
 </code>
  * @author ben
  */
 public class DBF {
 
+    /** The current directory. */
     protected static String currentDirectory = System.getProperty("user.home");
+    /** Whether auto trim is enabled. */
     protected static boolean autoTrimEnabled = true;
+    /** The DBT block size, default <em>8</em>. */
     protected static int dbtBlockSize = 8;
+    /** Whether file locking is enabled. Default <em>false</em>. */
     protected static boolean fileLockingEnabled = false;
+    /** Whether synchronous writes are enabled. Default <em>false</em>. */
     protected static boolean synchronousWritesEnabled = false;
+
     // buf needs to be at least 512 bytes. A larger buffer can result in greater
     // performance, but keep in mind that this buffer is never freed until
     // the JVM exits.
+    /** The direct byte buffer for I/O. */
     protected static final ByteBuffer buf = ByteBuffer.allocateDirect(8192)
             .order(ByteOrder.LITTLE_ENDIAN);
+    /** The file object for I/O. */
     protected final File dbfFile;
+    /** The random access file for I/O. */
     protected final RandomAccessFile randomAccessFile;
+    /** The associated DBF structure. */
     protected final DBFStructure structure;
+    /** The current record number. */
     protected int recordNumber;
+    /** The values in the current record. */
     protected DBFValue[] values;
+    /** Whether the current record is deleted. */
     protected boolean currentRecordDeleted;
 
     /**

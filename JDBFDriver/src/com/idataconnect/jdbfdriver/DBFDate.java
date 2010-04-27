@@ -44,9 +44,17 @@ import java.util.GregorianCalendar;
  */
 public class DBFDate implements Serializable, Comparable {
 
+    /**
+     * Day of week names in English. This is simply to avoid having to call
+     * the Java localization routines when printing the day names in English.
+     */
     static final String[] EN_DAY_NAMES = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
+
+    /** Year portion of the date value. */
     public short year;
+    /** Month portion of the date value. */
     public byte month;
+    /** Day of month portion of the date value. */
     public byte day;
 
     /**
@@ -82,7 +90,7 @@ public class DBFDate implements Serializable, Comparable {
     }
 
     /**
-     * Makes this date a blank date.
+     * Makes this date a blank date. In other words, clears the date locally.
      */
     public void clear() {
         month = 0;

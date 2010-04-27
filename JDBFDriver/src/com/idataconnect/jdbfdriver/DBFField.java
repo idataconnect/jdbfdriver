@@ -36,6 +36,7 @@ package com.idataconnect.jdbfdriver;
  */
 public class DBFField {
 
+    /** The type of the DBF field, describing the data it represents. */
     public enum FieldType {
 
         /** Character field type */
