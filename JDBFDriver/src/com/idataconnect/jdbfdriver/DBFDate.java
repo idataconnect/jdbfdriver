@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009-2010, i Data Connect!
+ * Copyright (c) 2009-2011, i Data Connect!
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -42,7 +42,9 @@ import java.util.GregorianCalendar;
  * which is valid in xBase, and is similar to a null type.
  * @author ben
  */
-public class DBFDate implements Serializable, Comparable {
+public class DBFDate implements Serializable, Comparable<DBFDate> {
+
+    private static final long serialVersionUID = 1L;
 
     /**
      * Day of week names in English. This is simply to avoid having to call
@@ -159,11 +161,8 @@ public class DBFDate implements Serializable, Comparable {
      * {@inheritDoc}
      * This implementation compares based on the number of calendar days.
      */
-    public int compareTo(Object o) {
-        if (! (o instanceof DBFDate))
-            return 0;
-
-        return new Integer(getCalendarDays()).compareTo(new Integer(((DBFDate) o).getCalendarDays()));
+    public int compareTo(DBFDate other) {
+        return new Integer(getCalendarDays()).compareTo(new Integer(other.getCalendarDays()));
     }
 
     /**

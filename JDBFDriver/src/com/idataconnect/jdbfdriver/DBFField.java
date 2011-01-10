@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009-2010, i Data Connect!
+ * Copyright (c) 2009-2011, i Data Connect!
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -123,6 +123,15 @@ public class DBFField {
         public boolean isNumericField() {
             return numericField;
         }
+
+        /**
+         * Gets whether this field is a memo field, whose data is stored
+         * externally to the DBF file.
+         * @return whether this field is a memo field.
+         */
+        public boolean isMemoField() {
+            return this == B || this == G || this == M;
+        }
     }
     private String fieldName = "UNKNOWN";
     private FieldType fieldType = FieldType.U;
@@ -169,13 +178,35 @@ public class DBFField {
     /**
      * Creates a field and specifies all of the field's attributes,
      * using a string for the field type.
-     * @param fieldName The name of the field.
-     * @param fieldTypeCode The code for the field type (e.g. "C")
-     * @param fieldLength The length of the field.
-     * @param decimalLength The length of the decimal portion of the field.
+     * @param fieldName the name of the field.
+     * @param fieldTypeCode the code for the field type (e.g. "C")
+     * @param fieldLength the length of the field.
+     * @param decimalLength the length of the decimal portion of the field.
      */
     public DBFField(String fieldName, String fieldTypeCode, int fieldLength, int decimalLength) {
         this(fieldName, FieldType.valueOf(fieldTypeCode), fieldLength, decimalLength);
+    }
+
+    /**
+     * Creates a field, specifying the field name, field type, and field length,
+     * with a decimal length of zero.
+     * @param fieldName the name of the field.
+     * @param fieldTypeCode the code for the field type (e.g. "C")
+     * @param fieldLength the length of the field.
+     */
+    public DBFField(String fieldName, String fieldTypeCode, int fieldLength) {
+        this(fieldName, fieldTypeCode, fieldLength, 0);
+    }
+
+    /**
+     * Creates a field, specifying the field name, field type, and field length,
+     * with a decimal length of zero.
+     * @param fieldName the name of the field.
+     * @param fieldType the field type.
+     * @param fieldLength the length of the field.
+     */
+    public DBFField(String fieldName, FieldType fieldType, int fieldLength) {
+        this(fieldName, fieldType, fieldLength, 0);
     }
 
     /**

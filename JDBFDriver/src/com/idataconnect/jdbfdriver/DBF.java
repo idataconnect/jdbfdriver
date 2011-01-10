@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009-2010, i Data Connect!
+ * Copyright (c) 2009-2011, i Data Connect!
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -42,6 +42,7 @@ import java.nio.channels.FileLock;
 import java.util.Calendar;
 import java.util.GregorianCalendar;
 import java.util.Iterator;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * <p>The main class for DBF interaction.</p>
@@ -52,39 +53,44 @@ dbf.appendBlank();<br/>
 dbf.replace("TEST", "Testing");<br/>
 dbf.close();<br/>
 </code>
+ * </p>
  * @author ben
  */
 public class DBF {
 
     /** The current directory. */
-    protected static String currentDirectory = System.getProperty("user.home");
+    private static String currentDirectory = System.getProperty("user.home");
     /** Whether auto trim is enabled. */
-    protected static boolean autoTrimEnabled = true;
+    private static boolean autoTrimEnabled = true;
     /** The DBT block size, default <em>8</em>. */
-    protected static int dbtBlockSize = 8;
+    private static int dbtBlockSize = 8;
     /** Whether file locking is enabled. Default <em>false</em>. */
-    protected static boolean fileLockingEnabled = false;
+    private static boolean fileLockingEnabled = false;
     /** Whether synchronous writes are enabled. Default <em>false</em>. */
-    protected static boolean synchronousWritesEnabled = false;
+    private static boolean synchronousWritesEnabled = false;
+    /** Whether thread safety in the library is enabled. Default <em>false</em>. */
+    private static boolean threadSafetyEnabled = false;
 
     // buf needs to be at least 512 bytes. A larger buffer can result in greater
     // performance, but keep in mind that this buffer is never freed until
     // the JVM exits.
     /** The direct byte buffer for I/O. */
-    protected static final ByteBuffer buf = ByteBuffer.allocateDirect(8192)
+    private static final ByteBuffer buf = ByteBuffer.allocateDirect(8192)
             .order(ByteOrder.LITTLE_ENDIAN);
+    private static final ReentrantLock threadLock = new ReentrantLock();
     /** The file object for I/O. */
-    protected final File dbfFile;
+    private final File dbfFile;
     /** The random access file for I/O. */
-    protected final RandomAccessFile randomAccessFile;
+    private final RandomAccessFile randomAccessFile;
     /** The associated DBF structure. */
-    protected final DBFStructure structure;
+    private final DBFStructure structure;
     /** The current record number. */
-    protected int recordNumber;
+    private int recordNumber;
     /** The values in the current record. */
-    protected DBFValue[] values;
+    private DBFValue[] values;
     /** Whether the current record is deleted. */
-    protected boolean currentRecordDeleted;
+    private boolean currentRecordDeleted;
+
 
     /**
      * Creates a new instance of a DBF file. This method is protected in order
@@ -142,7 +148,10 @@ public class DBF {
      * @throws IOException If an I/O error occurs.
      */
     protected void readStructure() throws IOException {
-        synchronized (buf) {
+        try {
+            if (isThreadSafetyEnabled()) {
+                threadLock.lock();
+            }
             buf.clear();
             FileChannel channel = randomAccessFile.getChannel();
             channel.position(0);
@@ -261,6 +270,10 @@ public class DBF {
                     buf.flip();
                 }
             } while (buf.get(buf.position()) != 0x0d); // Keep reading header structure until terminator is encountered
+        } finally {
+            if (isThreadSafetyEnabled()) {
+                threadLock.unlock();
+            }
         }
     }
 
@@ -269,7 +282,10 @@ public class DBF {
      * @throws IOException If an I/O error occurs.
      */
     protected void writeStructure() throws IOException {
-        synchronized (buf) {
+        try {
+            if (isThreadSafetyEnabled()) {
+                threadLock.lock();
+            }
             FileChannel channel = randomAccessFile.getChannel();
 
             if (structure.getHeaderLength() == 0 || structure.getRecordLength() == 0) {
@@ -305,14 +321,14 @@ public class DBF {
 
                 byte signature = 3;
                 if (structure.isDbtPaired())
-                    signature = (byte)(signature | 128);
+                    signature = (byte) (signature | 128);
                 if (structure.isMemoExists())
-                    signature = (byte)(signature | 8);
+                    signature = (byte) (signature | 8);
                 buf.put(signature);
 
                 buf.put((byte) (structure.getLastUpdated().year - 1900));
-                buf.put((byte) structure.getLastUpdated().month);
-                buf.put((byte) structure.getLastUpdated().day);
+                buf.put(structure.getLastUpdated().month);
+                buf.put(structure.getLastUpdated().day);
 
                 buf.putInt(structure.getNumberOfRecords());
 
@@ -410,6 +426,10 @@ public class DBF {
                 if (isFileLockingEnabled())
                     lock.release();
             }
+        } finally {
+            if (isThreadSafetyEnabled()) {
+                threadLock.unlock();
+            }
         }
     }
 
@@ -449,7 +469,7 @@ public class DBF {
 
     /**
      * Gets the block size for newly created DBT (memo) files. The block size
-     * is multiplied by 64 to obtain the number of bytes. The detault block
+     * is multiplied by 64 to obtain the number of bytes. The default block
      * size is 8, and therefore 512 bytes.
      * @return The block size for newly created DBT files.
      */
@@ -459,7 +479,7 @@ public class DBF {
 
     /**
      * Sets the block size for newly created DBT (memo) files. The block size
-     * is multiplied by 64 to obtain the number of bytes. The detault block
+     * is multiplied by 64 to obtain the number of bytes. The default block
      * size is 8, and therefore 512 bytes.
      * @param dbtBlockSize The block size for newly created DBT files.
      */
@@ -468,11 +488,9 @@ public class DBF {
     }
 
     /**
-     * Gets whether file locking is enabled. Note that file locking is not
-     * required for multi threaded access in the same JVM, since the
-     * library is thread safe. Also, more than one DBF instance running within
-     * the same JVM should not attempt to access the same tables, even if file
-     * locking is active.
+     * Gets whether file locking is enabled. Note that more than one DBF instance
+     * running within the same JVM should not attempt to access the same tables,
+     * even if file locking is active.
      * @return Whether file locking is currently active.
      */
     public static boolean isFileLockingEnabled() {
@@ -480,11 +498,9 @@ public class DBF {
     }
 
     /**
-     * Sets whether file locking is enabled. Note that file locking is not
-     * required for multi threaded access in the same JVM, since the
-     * library is thread safe. Also, more than one DBF instance running within
-     * the same JVM should not attempt to access the same tables, even if file
-     * locking is active.
+     * Sets whether file locking is enabled. Note that more than one DBF instance
+     * running within the same JVM should not attempt to access the same tables,
+     * even if file locking is active.
      * @param fileLockingEnabled Whether to activate or deactivate file locking.
      */
     public static void setFileLockingEnabled(boolean fileLockingEnabled) {
@@ -510,6 +526,30 @@ public class DBF {
      */
     public static void setSynchronousWritesEnabled(boolean synchronousWritesEnabled) {
         DBF.synchronousWritesEnabled = synchronousWritesEnabled;
+    }
+
+    /**
+     * Gets whether thread safety is enabled in the library. If this library
+     * is to be called from multiple threads, thread safety should be enabled.
+     * Failing to enable thread safety when necessary will cause crashes, data
+     * loss and corruption. When in doubt, enable thread safety. Thread safety
+     * is disabled by default for performance reasons.
+     * @return whether thread safety is enabled.
+     */
+    public static boolean isThreadSafetyEnabled() {
+        return threadSafetyEnabled;
+    }
+
+    /**
+     * Sets whether thread safety is enabled in the library. If this library
+     * is to be called from multiple threads, thread safety should be enabled.
+     * Failing to enable thread safety when necessary will cause crashes, data
+     * loss and corruption. When in doubt, enable thread safety. Thread safety
+     * is disabled by default for performance reasons.
+     * @param threadSafetyEnabled whether to enable thread safety.
+     */
+    public static void setThreadSafetyEnabled(boolean threadSafetyEnabled) {
+        DBF.threadSafetyEnabled = threadSafetyEnabled;
     }
 
     /**
@@ -607,7 +647,10 @@ public class DBF {
                 values[count] = field.getDefaultValue();
             }
         } else {
-            synchronized (buf) {
+            try {
+                if (isThreadSafetyEnabled()) {
+                    threadLock.lock();
+                }
                 if (bof())
                     recordNumber = 1;
                 FileChannel channel = randomAccessFile.getChannel();
@@ -699,7 +742,7 @@ public class DBF {
                                     headerBuf.position(20);
                                     int blockLength = headerBuf.getShort() & 0xffff; // Unsigned short
                                     if (blockLength < 64)
-                                        throw new IOException("DBT appears to be corrupt. Block length (" + blockLength + ") < 512");
+                                        throw new IOException("DBT appears to be corrupt. Block length (" + blockLength + ") < 64 blocks (512 bytes)");
 
                                     // Move to the block where the memo field is stored.
                                     dbtChannel.position(blockNumber * blockLength);
@@ -774,6 +817,10 @@ public class DBF {
                             values[count] = new DBFValue(currentField, "");
                             break;
                     }
+                }
+            } finally {
+                if (isThreadSafetyEnabled()) {
+                    threadLock.unlock();
                 }
             }
         }
@@ -956,7 +1003,10 @@ public class DBF {
 
         Object oldValue = values[fieldNumber - 1].getValue();
         values[fieldNumber - 1].setValue(value);
-        synchronized (buf) {
+        try {
+            if (isThreadSafetyEnabled()) {
+                threadLock.lock();
+            }
             int fieldSkipLength = 1; // Skip over deleted flag
 
             // Calculate size of preceding fields to skip over
@@ -1179,6 +1229,10 @@ public class DBF {
                 if (isFileLockingEnabled())
                     lock.release();
             }
+        } finally {
+            if (isThreadSafetyEnabled()) {
+                threadLock.unlock();
+            }
         }
 
         updateLastModifiedDate();
@@ -1198,19 +1252,98 @@ public class DBF {
         if (structure.getFields() == null || structure.getFields().isEmpty())
             throw new IllegalArgumentException("The DBF structure has no fields.");
 
+        for (DBFField field : structure.getFields()) {
+            if (field.getFieldType().isMemoField()) {
+                structure.setDbtPaired(true);
+            }
+        }
+
         structure.setNumberOfRecords(0);
         DBF dbf = new DBF(dbfFile, new RandomAccessFile(dbfFile, "rw" + (synchronousWritesEnabled ? "s" : "")), structure);
+        if (dbf.getStructure().isDbtPaired())
+            dbf.createDbt();
         dbf.writeStructure();
         dbf.gotoRecord(0);
         return dbf;
     }
 
+    public void createDbt() throws IOException {
+        File dbtFile = getDbtFile();
+        if (dbtFile.exists()) {
+            throw new IOException("File already exists while attempting to create the DBT file: " + dbtFile.getAbsolutePath());
+        }
+
+        RandomAccessFile dbtRandomAccessFile = new RandomAccessFile(dbtFile, "rw" + (synchronousWritesEnabled ? "s" : ""));
+        try {
+            if (isThreadSafetyEnabled()) {
+                threadLock.lock();
+            }
+            FileChannel dbtChannel = dbtRandomAccessFile.getChannel();
+
+            // Write the next available block
+            buf.clear();
+            buf.putInt(1);
+            buf.flip();
+            while (buf.hasRemaining())
+                dbtChannel.write(buf);
+
+            // Write the block size
+            buf.clear();
+            buf.putInt(64);
+            buf.flip();
+            while (buf.hasRemaining())
+                dbtChannel.write(buf);
+
+            // Write the name of the DBF file.
+            String filename = dbfFile.getPath().replaceAll("\\..+$", "");
+            buf.clear();
+            for (int count = 0; count < 8; count++) {
+                if (count < filename.length()) {
+                    buf.put((byte) filename.charAt(count));
+                } else {
+                    buf.put((byte) 0);
+                }
+            }
+            buf.flip();
+            while (buf.hasRemaining()) {
+                dbtChannel.write(buf);
+            }
+
+            dbtChannel.position(dbtChannel.position() + 4);
+            assert(dbtChannel.position() == 20);
+
+            // Write the block length
+            buf.clear();
+            buf.putShort((short) (getDbtBlockSize() * 64));
+            buf.flip();
+            while (buf.hasRemaining()) {
+                dbtChannel.write(buf);
+            }
+
+            buf.clear();
+            buf.put((byte) 0);
+            buf.flip();
+            dbtChannel.position(511);
+            dbtChannel.write(buf);
+            while (buf.hasRemaining()) {
+                dbtChannel.write(buf);
+            }
+            
+            dbtChannel.close();
+        } finally {
+            if (isThreadSafetyEnabled()) {
+                threadLock.unlock();
+            }
+            dbtRandomAccessFile.close();
+        }
+    }
+
     /**
      * Creates a new DBF file, using the specified fields for the structure.
-     * @param dbfFile The file to write the new DBF.
-     * @param fields The fields which make up the structure of the new DBF.
-     * @return The newly created DBF file.
-     * @throws IOException If an I/O error occurs.
+     * @param dbfFile the file to write the new DBF.
+     * @param fields the fields which make up the structure of the new DBF.
+     * @return the newly created DBF file.
+     * @throws IOException if an I/O error occurs.
      */
     public static DBF create(File dbfFile, Iterable<DBFField> fields) throws IOException {
         DBFStructure structure = new DBFStructure();
@@ -1218,6 +1351,28 @@ public class DBF {
             structure.getFields().add(field);
 
         return create(dbfFile, structure);
+    }
+
+    /**
+     * Creates a new DBF file, using the specified structure.
+     * @param relativePathFile the relative path of the file to write the new DBF.
+     * @param structure the structure of the new DBF.
+     * @return the newly created DBF file.
+     * @throws IOException if an I/O error occurs.
+     */
+    public static DBF create(String relativePathFile, DBFStructure structure) throws IOException {
+        return create(new File(getCurrentDirectory(), relativePathFile), structure);
+    }
+
+    /**
+     * Creates a new DBF file, using the specified fields for the structure.
+     * @param relativePathFile the relative path of the file to write the new DBF.
+     * @param fields the fields which make up the structure of the new DBF.
+     * @return the newly created DBF file.
+     * @throws IOException if an I/O error occurs.
+     */
+    public static DBF create(String relativePathFile, Iterable<DBFField> fields) throws IOException {
+        return create(new File(getCurrentDirectory(), relativePathFile), fields);
     }
 
     /**
@@ -1274,7 +1429,10 @@ public class DBF {
             throw new IllegalStateException("Cannot delete or undelete at end of file");
 
         if (currentRecordDeleted != delete) {
-            synchronized (buf) {
+            try {
+                if (isThreadSafetyEnabled()) {
+                    threadLock.lock();
+                }
                 buf.position(0);
                 buf.limit(1);
                 buf.put((byte) (delete ? '*' : ' '));
@@ -1283,6 +1441,10 @@ public class DBF {
                 channel.position(structure.getHeaderLength() + (recordNumber - 1) * structure.getRecordLength());
                 while (buf.hasRemaining())
                     channel.write(buf);
+            } finally {
+                if (isThreadSafetyEnabled()) {
+                    threadLock.unlock();
+                }
             }
             currentRecordDeleted = delete;
 
@@ -1312,7 +1474,10 @@ public class DBF {
             return;
 
         // Write the date
-        synchronized (buf) {
+        try {
+            if (isThreadSafetyEnabled()) {
+                threadLock.lock();
+            }
             buf.clear();
             buf.put(byte1);
             buf.put(byte2);
@@ -1331,6 +1496,10 @@ public class DBF {
                 if (isFileLockingEnabled())
                     lock.release();
             }
+        } finally {
+            if (isThreadSafetyEnabled()) {
+                threadLock.unlock();
+            }
         }
     }
 
@@ -1339,14 +1508,19 @@ public class DBF {
      * @throws IOException If an I/O error occurs.
      */
     public void appendBlank() throws IOException {
-        synchronized (buf) {
+        try {
+            if (isThreadSafetyEnabled()) {
+                threadLock.lock();
+            }
             FileChannel channel = randomAccessFile.getChannel();
             // Lock "number of records" field in header and then the range of
             // the new record
             FileLock lock1 = null;
             FileLock lock2 = null;
             try {
-                lock1 = channel.lock(4, 4, false);
+                if (isFileLockingEnabled()) {
+                    lock1 = channel.lock(4, 4, false);
+                }
 
                 // Check if increasing the size of the file will put it over
                 // the 2GB limit. We check the logical size instead of the
@@ -1360,9 +1534,11 @@ public class DBF {
                 // Lock and write the new record
                 channel.position(structure.getHeaderLength()
                         + structure.getRecordLength() * structure.getNumberOfRecords());
-                lock2 = channel.lock(structure.getHeaderLength()
-                        + structure.getRecordLength() * structure.getNumberOfRecords(),
-                        structure.getRecordLength() + 1, false); // New record plus EOF mark
+                if (isFileLockingEnabled()) {
+                    lock2 = channel.lock(structure.getHeaderLength()
+                            + structure.getRecordLength() * structure.getNumberOfRecords(),
+                            structure.getRecordLength() + 1, false); // New record plus EOF mark
+                }
                 buf.position(0);
                 buf.limit(1);
                 buf.put((byte) ' '); // Not deleted
@@ -1423,11 +1599,22 @@ public class DBF {
                 // Update the number of records in the in-memory structure
                 structure.setNumberOfRecords(numberOfRecords);
             } finally {
-                try {
-                    lock1.release();
-                } catch (Exception ex) {
+                if (lock1 != null) {
+                    try {
+                        lock1.release();
+                    } catch (Exception ex) {
+                    }
                 }
-                lock2.release();
+                if (lock2 != null) {
+                    try {
+                        lock2.release();
+                    } catch (Exception ex) {
+                    }
+                }
+            }
+        } finally {
+            if (isThreadSafetyEnabled()) {
+                threadLock.unlock();
             }
         }
 

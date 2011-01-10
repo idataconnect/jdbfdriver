@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009-2010, i Data Connect!
+ * Copyright (c) 2009-2011, i Data Connect!
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -41,6 +41,8 @@ import java.util.List;
  * @author ben
  */
 public class DBFStructure implements Serializable {
+
+    private static final long serialVersionUID = 1L;
 
     private List<DBFField> fields = new LinkedList<DBFField>();
     private boolean dbtPaired;
