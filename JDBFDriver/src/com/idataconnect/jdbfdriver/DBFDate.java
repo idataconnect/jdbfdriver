@@ -109,8 +109,8 @@ public class DBFDate implements Serializable, Comparable<DBFDate> {
     }
 
     /**
-     * Gets the number of days that have occured since {1/1/0}.
-     * @return The number of days that have occured since {1/1/0}.
+     * Gets the number of days that have occurred since {1/1/0}.
+     * @return The number of days that have occurred since {1/1/0}.
      */
     public int getCalendarDays() {
         int ld = (month < 3) ? ((year % 4 == 0) && ((year % 100 > 0) || (year % 400 == 0)) ? 1 : 0) : 2;
