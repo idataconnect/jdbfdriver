@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009-2011, i Data Connect!
+ * Copyright (c) 2009-2012, i Data Connect!
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -86,7 +86,7 @@ public class DBFDate implements Serializable, Comparable<DBFDate> {
         GregorianCalendar cal = new GregorianCalendar();
         current.month = (byte) (cal.get(Calendar.MONTH) + 1);
         current.day = (byte) cal.get(Calendar.DAY_OF_MONTH);
-        current.year = (byte) cal.get(Calendar.YEAR);
+        current.year = (short) cal.get(Calendar.YEAR);
 
         return current;
     }
@@ -109,12 +109,55 @@ public class DBFDate implements Serializable, Comparable<DBFDate> {
     }
 
     /**
-     * Gets the number of days that have occurred since {1/1/0}.
-     * @return The number of days that have occurred since {1/1/0}.
+     * Gets the Julian day of this date.
+     *
+     * @return the Julian day, or <code>-1</code> if the current date is blank.
      */
-    public int getCalendarDays() {
-        int ld = (month < 3) ? ((year % 4 == 0) && ((year % 100 > 0) || (year % 400 == 0)) ? 1 : 0) : 2;
-        return day + 30 * (month - 1) + ((month + month / 8) / 2) + year * 365 + year / 4 - year / 100 + year / 400 - ld;
+    public int getJulianDay() {
+        if (isBlank()) {
+            return -1;
+        }
+
+        int y = year;
+        int m = month;
+        final int d = day;
+        
+        if (m <= 2) {
+            y--;
+            m += 12;
+        }
+
+        final int a = y / 100;
+        final int b = a / 4;
+        final int c = 2 - a + b;
+        final int e = (int) (365.25 * (y + 4716));
+        final int f = (int) (30.6001 * (m + 1));
+
+        return (int) c + d + e + f - 1525;
+    }
+
+    /**
+     * Creates a DBF date from the given Julian day.
+     *
+     * @param julianDay the Julian day to convert from, as returned
+     * by {@link #getJulianDay}.
+     * @return a new DBF date instance
+     */
+    public static DBFDate fromJulianDay(int julianDay) {
+        final int z = julianDay;
+        final int w = (int) ((z - 1867216.25) / 36524.25);
+        final int x = (int) (w / 4);
+        final int a = z + 1 + w - x;
+        final int b = a + 1525;
+        final int c = (int) ((b - 122.1) / 365.25);
+        final int d = (int) (365.25 * c);
+        final int e = (int) ((b - d) / 30.6001);
+        final int f = (int) (30.6001 * e);
+        final int day = b - d - f;
+        final int month = e <= 13 ? e - 1 : e - 13;
+        final int year = month <= 2 ? c - 4715 : c - 4716;
+
+        return new DBFDate(month, day, year);
     }
 
     /**
@@ -159,10 +202,10 @@ public class DBFDate implements Serializable, Comparable<DBFDate> {
 
     /**
      * {@inheritDoc}
-     * This implementation compares based on the number of calendar days.
+     * This implementation compares based on the Julian days.
      */
     public int compareTo(DBFDate other) {
-        return new Integer(getCalendarDays()).compareTo(new Integer(other.getCalendarDays()));
+        return new Integer(getJulianDay()).compareTo(new Integer(other.getJulianDay()));
     }
 
     /**
@@ -181,7 +224,7 @@ public class DBFDate implements Serializable, Comparable<DBFDate> {
 
     /**
      * {@inheritDoc}
-     * This implementation considers two dates equal if their calendar days
+     * This implementation considers two dates equal if their Julian days
      * are equal.
      */
     @Override
@@ -190,16 +233,16 @@ public class DBFDate implements Serializable, Comparable<DBFDate> {
             return false;
 
         DBFDate other = (DBFDate) obj;
-        return getCalendarDays() == other.getCalendarDays();
+        return getJulianDay() == other.getJulianDay();
     }
 
     /**
      * {@inheritDoc}
-     * This implementation uses the integer hash code of the number of
-     * calendar days.
+     * This implementation uses the integer hash code of the
+     * Julian day.
      */
     @Override
     public int hashCode() {
-        return new Integer(getCalendarDays()).hashCode();
+        return new Integer(getJulianDay()).hashCode();
     }
 }
