@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009-2011, i Data Connect!
+ * Copyright (c) 2009-2012, i Data Connect!
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -30,6 +30,7 @@
  */
 package com.idataconnect.jdbfdriver;
 
+import java.math.BigDecimal;
 import java.util.Calendar;
 import java.util.GregorianCalendar;
 
@@ -63,8 +64,9 @@ public class DBFValue {
             GregorianCalendar cal = new GregorianCalendar();
             cal.setTime((java.util.Date) value);
             this.value = new DBFDate(cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH), cal.get(Calendar.YEAR));
-        } else
+        } else {
             this.value = value;
+        }
     }
 
     /**
@@ -87,7 +89,7 @@ public class DBFValue {
     /**
      * Gets the data as a <code>double</code>.
      * @throws IllegalStateException if the value is not a numeric type.
-     * @return the value as a double.
+     * @return the value as a <code>double</code>.
      */
     public double getDouble() {
         if (!isNumeric())
@@ -99,7 +101,7 @@ public class DBFValue {
     /**
      * Gets the data as an <code>int</code>.
      * @throws IllegalStateException if the value is not a numeric type.
-     * @return the value as an int.
+     * @return the value as an <code>int</code>.
      */
     public int getInt() {
         if (!isNumeric())
@@ -109,9 +111,22 @@ public class DBFValue {
     }
 
     /**
+     * Gets the data as a <code>BigDecimal</code>.
+     * @throws IllegalStateException if the value is not a numeric type.
+     * @return the value as a <code>BigDecimal</code>.
+     */
+    public BigDecimal getBigDecimal() {
+        if (!isNumeric()) {
+            throw new IllegalStateException("getBigDecimal() called on a value which is not numeric");
+        } else {
+            return (BigDecimal) value;
+        }
+    }
+
+    /**
      * Gets the data as a <code>boolean</code>.
      * @throws IllegalStateException if the value is not a boolean type.
-     * @return the value as a boolean.
+     * @return the value as a <code>boolean</code>.
      */
     public boolean getBoolean() {
         if (!(value instanceof Boolean))

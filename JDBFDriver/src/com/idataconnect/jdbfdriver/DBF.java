@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009-2011, i Data Connect!
+ * Copyright (c) 2009-2012, i Data Connect!
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -30,11 +30,8 @@
  */
 package com.idataconnect.jdbfdriver;
 
-import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.IOException;
-import java.io.PrintStream;
-import java.io.RandomAccessFile;
+import java.io.*;
+import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
@@ -43,6 +40,8 @@ import java.util.Calendar;
 import java.util.GregorianCalendar;
 import java.util.Iterator;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * <p>The main class for DBF interaction.</p>
@@ -57,6 +56,8 @@ dbf.close();<br/>
  * @author ben
  */
 public class DBF {
+    
+    private static final Logger log = Logger.getLogger(DBF.class.getName());
 
     /** The current directory. */
     private static String currentDirectory = System.getProperty("user.home");
@@ -113,7 +114,8 @@ public class DBF {
      * @throws IOException If an I/O error occurs.
      */
     public static DBF use(File dbfFile) throws FileNotFoundException, IOException {
-        RandomAccessFile file = new RandomAccessFile(dbfFile, "rw" + (synchronousWritesEnabled ? "s" : ""));
+        RandomAccessFile file = new RandomAccessFile(dbfFile, "rw"
+                + (synchronousWritesEnabled ? "s" : ""));
         DBF dbf = new DBF(dbfFile, file, new DBFStructure());
         dbf.readStructure();
         dbf.gotoRecord(1);
@@ -148,6 +150,7 @@ public class DBF {
      * @throws IOException If an I/O error occurs.
      */
     protected void readStructure() throws IOException {
+        FileLock lock = null;
         try {
             if (isThreadSafetyEnabled()) {
                 threadLock.lock();
@@ -155,15 +158,10 @@ public class DBF {
             buf.clear();
             FileChannel channel = randomAccessFile.getChannel();
             channel.position(0);
-            FileLock lock = null;
-            if (isFileLockingEnabled())
+            if (isFileLockingEnabled()) {
                 lock = channel.lock(0, 32, true);
-            try {
-                while (buf.position() < 32 && channel.read(buf) != -1) {}
-            } finally {
-                if (lock != null)
-                    lock.release();
             }
+            while (buf.position() < 32 && channel.read(buf) != -1) {}
             buf.flip();
             if (buf.remaining() < 33)
                 throw new IOException("File too small to be a valid DBF");
@@ -174,7 +172,8 @@ public class DBF {
             // Check creator version
             int version = signature & 7; // 0b00000111
             if (version != 3) // 0b00000011
-                System.err.println("Warning: DBF has an unsupported signature (version ID " + version + ")");
+                log.log(Level.WARNING, "DBF [%s] has an unsupported signature (version ID %x)",
+                        new Object[] {dbfFile, version});
 
             // Check DBT flag
             boolean dbtPaired = (signature & 128) == 128; // 0b10000000
@@ -250,6 +249,7 @@ public class DBF {
                     field.setDecimalLength(0);
                 } else if (fieldType.equals(DBFField.FieldType.D)) {
                     field.setFieldLength(8);
+                    field.setDecimalLength(0);
                 } else {
                     field.setFieldLength(headerBytes[16]);
                     field.setDecimalLength(headerBytes[17]);
@@ -273,6 +273,11 @@ public class DBF {
         } finally {
             if (isThreadSafetyEnabled()) {
                 threadLock.unlock();
+            }
+            if (lock != null) {
+                try {
+                    lock.release();
+                } catch (IOException ex) {}
             }
         }
     }
@@ -785,9 +790,7 @@ public class DBF {
                                 } finally {
                                     try {
                                         dbtRandomAccessFile.close();
-                                    } catch (Exception ex) {
-                                        ex.printStackTrace();
-                                    }
+                                    } catch (IOException ex) {}
                                 }
                             }
                             break;
@@ -797,7 +800,7 @@ public class DBF {
                             if (dataString.length() == 0)
                                 values[count] = new DBFValue(currentField, currentField.getDefaultValue().getValue());
                             else
-                                values[count] = new DBFValue(currentField, Double.parseDouble(dataString));
+                                values[count] = new DBFValue(currentField, new BigDecimal(dataString));
                             break;
                         case D:
                             if (fieldData.length == 0 || fieldData[0] == ' ') // Blank date
@@ -988,11 +991,12 @@ public class DBF {
      * @param value The new value.
      * @throws IOException If an I/O error occurs.
      */
-    public void replace(int fieldNumber, Object value) throws IOException {
+    public Object replace(int fieldNumber, Object value) throws IOException {
         if (fieldNumber <= 0)
             throw new IllegalArgumentException("Field number must be greater than zero");
         else if (fieldNumber > structure.getFields().size())
-            throw new IllegalArgumentException("Field number greater than the number of fields in the table (" + fieldNumber + " > " + structure.getFields().size() + ")");
+            throw new IllegalArgumentException("Field number greater than the number of fields in the table ("
+                    + fieldNumber + " > " + structure.getFields().size() + ")");
         else if (bof())
             throw new IllegalStateException("Cannot replace a value at beginning of file");
         else if (eof())
@@ -1024,9 +1028,15 @@ public class DBF {
                 case M:
                 case B:
                 case G:
-                    // Open the DBT file
                     File dbtFile = getDbtFile();
-                    RandomAccessFile dbtRandomAccessFile = new RandomAccessFile(dbtFile, "rw" + (synchronousWritesEnabled ? "s" : ""));
+
+                    // Create the DBT file if it is missing
+                    if (!dbtFile.exists())
+                        createDbt();
+
+                    // Open the DBT file
+                    RandomAccessFile dbtRandomAccessFile = new RandomAccessFile(
+                            dbtFile, "rw" + (synchronousWritesEnabled ? "s" : ""));
                     try {
                         FileChannel dbtChannel = dbtRandomAccessFile.getChannel();
 
@@ -1067,7 +1077,8 @@ public class DBF {
                         boolean appendNewRecord = true;
                         if (newValueBlocksRequired <= oldValueBlocksRequired) {
                             // Use the existing blocks; Find the block number.
-                            channel.position(structure.getHeaderLength() + fieldSkipLength + (recordNumber - 1) * structure.getRecordLength());
+                            channel.position(structure.getHeaderLength() + fieldSkipLength
+                                    + (recordNumber - 1) * structure.getRecordLength());
                             buf.position(0);
                             buf.limit(10);
                             while (buf.hasRemaining())
@@ -1112,7 +1123,8 @@ public class DBF {
 
                             // Write the block number of the new value to the
                             // column in the DBF file.
-                            channel.position(structure.getHeaderLength() + fieldSkipLength + (recordNumber - 1) * structure.getRecordLength());
+                            channel.position(structure.getHeaderLength() + fieldSkipLength
+                                    + (recordNumber - 1) * structure.getRecordLength());
                             buf.position(0);
                             buf.limit(10);
                             buf.put(String.format("%10d", nextAvailableBlock).getBytes());
@@ -1185,49 +1197,50 @@ public class DBF {
                             buf.put((byte) 0); // null
                         while (dbtChannel.position() < remainderPosition) {
                             buf.position(0);
-                            buf.limit(Math.min(remainderPosition - (int) dbtChannel.position(), buf.capacity()));
+                            buf.limit(Math.min(remainderPosition
+                                    - (int) dbtChannel.position(), buf.capacity()));
                             do {
                                 dbtChannel.write(buf);
                             } while (buf.hasRemaining());
                         }
-
-                        return;
                     } finally {
                         dbtRandomAccessFile.close();
                     }
-            }
+                default:
+                    // Try to use the direct buffer if it is large enough. Otherwise
+                    // allocate another buffer large enough for the field.
+                    ByteBuffer fieldBuffer;
+                    if (buf.capacity() < f.getFieldLength())
+                        fieldBuffer = ByteBuffer.allocate(f.getFieldLength());
+                    else {
+                        fieldBuffer = buf;
+                        fieldBuffer.position(0);
+                        fieldBuffer.limit(f.getFieldLength());
+                    }
 
-            // Try to use the direct buffer if it is large enough. Otherwise
-            // allocate another buffer large enough for the field.
-            ByteBuffer fieldBuffer;
-            if (buf.capacity() < f.getFieldLength())
-                fieldBuffer = ByteBuffer.allocate(f.getFieldLength());
-            else {
-                fieldBuffer = buf;
-                fieldBuffer.position(0);
-                fieldBuffer.limit(f.getFieldLength());
-            }
+                    // Fill the buffer with spaces
+                    while (fieldBuffer.hasRemaining())
+                        fieldBuffer.put((byte) ' ');
+                    fieldBuffer.position(0);
 
-            // Fill the buffer with spaces
-            while (fieldBuffer.hasRemaining())
-                fieldBuffer.put((byte) ' ');
-            fieldBuffer.position(0);
-
-            // Write value, truncating it if necessary, so it doesn't overflow
-            // the field.
-            byte[] valueBytes = value.toString().getBytes();
-            fieldBuffer.put(valueBytes, 0, Math.min(valueBytes.length, f.getFieldLength()));
-            fieldBuffer.position(0);
-            channel.position(structure.getHeaderLength() + fieldSkipLength + (recordNumber - 1) * structure.getRecordLength());
-            FileLock lock = null;
-            if (isFileLockingEnabled())
-            lock = channel.lock(structure.getHeaderLength() + fieldSkipLength + (recordNumber - 1) * structure.getRecordLength(), f.getFieldLength(), false);
-            try {
-                while (fieldBuffer.hasRemaining())
-                    channel.write(fieldBuffer);
-            } finally {
-                if (isFileLockingEnabled())
-                    lock.release();
+                    // Write value, truncating it if necessary, so it doesn't overflow
+                    // the field.
+                    byte[] valueBytes = value.toString().getBytes();
+                    fieldBuffer.put(valueBytes, 0, Math.min(valueBytes.length, f.getFieldLength()));
+                    fieldBuffer.position(0);
+                    channel.position(structure.getHeaderLength() + fieldSkipLength
+                            + (recordNumber - 1) * structure.getRecordLength());
+                    FileLock lock = null;
+                    if (isFileLockingEnabled())
+                    lock = channel.lock(structure.getHeaderLength() + fieldSkipLength
+                            + (recordNumber - 1) * structure.getRecordLength(), f.getFieldLength(), false);
+                    try {
+                        while (fieldBuffer.hasRemaining())
+                            channel.write(fieldBuffer);
+                    } finally {
+                        if (isFileLockingEnabled())
+                            lock.release();
+                    }
             }
         } finally {
             if (isThreadSafetyEnabled()) {
@@ -1236,6 +1249,8 @@ public class DBF {
         }
 
         updateLastModifiedDate();
+
+        return oldValue;
     }
 
     /**
@@ -1259,7 +1274,8 @@ public class DBF {
         }
 
         structure.setNumberOfRecords(0);
-        DBF dbf = new DBF(dbfFile, new RandomAccessFile(dbfFile, "rw" + (synchronousWritesEnabled ? "s" : "")), structure);
+        DBF dbf = new DBF(dbfFile, new RandomAccessFile(dbfFile, "rw"
+                + (synchronousWritesEnabled ? "s" : "")), structure);
         if (dbf.getStructure().isDbtPaired())
             dbf.createDbt();
         dbf.writeStructure();
@@ -1267,13 +1283,21 @@ public class DBF {
         return dbf;
     }
 
-    public void createDbt() throws IOException {
+    /**
+     * Creates the DBT (memo) file which is attached to the current DBF file.
+     * This should be called only once, and only if a DBT file does not
+     * currently exist.
+     * @throws IOException if an I/O error occurs
+     */
+    protected void createDbt() throws IOException {
         File dbtFile = getDbtFile();
         if (dbtFile.exists()) {
-            throw new IOException("File already exists while attempting to create the DBT file: " + dbtFile.getAbsolutePath());
+            throw new IOException("File already exists while attempting to create the DBT file: "
+                    + dbtFile.getAbsolutePath());
         }
 
-        RandomAccessFile dbtRandomAccessFile = new RandomAccessFile(dbtFile, "rw" + (synchronousWritesEnabled ? "s" : ""));
+        RandomAccessFile dbtRandomAccessFile = new RandomAccessFile(
+                dbtFile, "rw" + (synchronousWritesEnabled ? "s" : ""));
         try {
             if (isThreadSafetyEnabled()) {
                 threadLock.lock();
@@ -1295,7 +1319,15 @@ public class DBF {
                 dbtChannel.write(buf);
 
             // Write the name of the DBF file.
-            String filename = dbfFile.getPath().replaceAll("\\..+$", "");
+            String filename;
+            int dotIndex = dbfFile.getPath().indexOf('.');
+            if (dotIndex == 0) {
+                filename = "_";
+            } else if (dotIndex == -1) {
+                filename = dbfFile.getPath();
+            } else {
+                filename = dbfFile.getPath().substring(0, dotIndex);
+            }
             buf.clear();
             for (int count = 0; count < 8; count++) {
                 if (count < filename.length()) {
@@ -1429,6 +1461,7 @@ public class DBF {
             throw new IllegalStateException("Cannot delete or undelete at end of file");
 
         if (currentRecordDeleted != delete) {
+            FileLock lock = null;
             try {
                 if (isThreadSafetyEnabled()) {
                     threadLock.lock();
@@ -1438,10 +1471,21 @@ public class DBF {
                 buf.put((byte) (delete ? '*' : ' '));
                 buf.position(0);
                 FileChannel channel = randomAccessFile.getChannel();
+                if (isFileLockingEnabled()) {
+                    lock = channel.lock();
+                }
+                // Re-read the header if thread safety or file locking are
+                // enabled, in case it was updated externally.
+                if (isThreadSafetyEnabled() || isFileLockingEnabled()) {
+                    readStructure();
+                }
                 channel.position(structure.getHeaderLength() + (recordNumber - 1) * structure.getRecordLength());
                 while (buf.hasRemaining())
                     channel.write(buf);
             } finally {
+                if (lock != null) {
+                    lock.release();
+                }
                 if (isThreadSafetyEnabled()) {
                     threadLock.unlock();
                 }
@@ -1453,8 +1497,7 @@ public class DBF {
     }
 
     /**
-     * Updates the last modified date to the current date. If the last modified
-     * date is already the current date, nothing will be performed.
+     * Updates the last modified date to the current date.
      * @throws IOException If an I/O error occurs.
      */
     protected void updateLastModifiedDate() throws IOException {
@@ -1464,12 +1507,13 @@ public class DBF {
         int month = cal.get(Calendar.MONTH) + 1;
         int day = cal.get(Calendar.DAY_OF_MONTH);
 
-        // Pack it into the 3 bytes expected by the DBF header.
+        // Pack it into the three bytes expected by the DBF header.
         byte byte1 = (byte) (year - 1900);
         byte byte2 = (byte) month;
         byte byte3 = (byte) day;
 
-        if (structure.getLastUpdated() != null
+        if (!isFileLockingEnabled() && !isThreadSafetyEnabled()
+                && structure.getLastUpdated() != null
                 && structure.getLastUpdated().equals(new DBFDate(month, day, year)))
             return;
 
@@ -1644,6 +1688,17 @@ public class DBF {
      */
     protected void calculateFlags() {
 
+    }
+
+    /**
+     * Instructs the operating system to commit any remaining I/O operations
+     * to disk. This is useful when synchronous writes are disabled, and the
+     * API user would like to manually perform a sync.
+     */
+    public void sync() {
+        try {
+            randomAccessFile.getChannel().force(false);
+        } catch (IOException ex) {}
     }
 
     /**

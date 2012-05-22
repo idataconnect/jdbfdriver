@@ -205,7 +205,7 @@ public class DBFDate implements Serializable, Comparable<DBFDate> {
      * This implementation compares based on the Julian days.
      */
     public int compareTo(DBFDate other) {
-        return new Integer(getJulianDay()).compareTo(new Integer(other.getJulianDay()));
+        return Integer.valueOf(getJulianDay()).compareTo(Integer.valueOf(other.getJulianDay()));
     }
 
     /**
@@ -243,6 +243,6 @@ public class DBFDate implements Serializable, Comparable<DBFDate> {
      */
     @Override
     public int hashCode() {
-        return new Integer(getJulianDay()).hashCode();
+        return Integer.valueOf(getJulianDay()).hashCode();
     }
 }
