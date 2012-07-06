@@ -133,6 +133,7 @@ public class DBFField {
             return this == B || this == G || this == M;
         }
     }
+
     private String fieldName = "UNKNOWN";
     private FieldType fieldType = FieldType.U;
     private int fieldLength;
@@ -146,11 +147,12 @@ public class DBFField {
 
     /**
      * Creates a field with the specified attributes.
-     * @param fieldName The name of the field.
-     * @param fieldType The type of the field.
-     * @param fieldLength The length of the field.
-     * @param decimalLength The length of the decimal portion of the field.
+     * @param fieldName the name of the field
+     * @param fieldType the type of the field
+     * @param fieldLength the length of the field
+     * @param decimalLength the length of the decimal portion of the field
      */
+    @SuppressWarnings("fallthrough")
     public DBFField(String fieldName, FieldType fieldType, int fieldLength, int decimalLength) {
         this.fieldName = fieldName.toUpperCase();
         this.fieldType = fieldType;
@@ -178,10 +180,10 @@ public class DBFField {
     /**
      * Creates a field and specifies all of the field's attributes,
      * using a string for the field type.
-     * @param fieldName the name of the field.
+     * @param fieldName the name of the field
      * @param fieldTypeCode the code for the field type (e.g. "C")
      * @param fieldLength the length of the field.
-     * @param decimalLength the length of the decimal portion of the field.
+     * @param decimalLength the length of the decimal portion of the field
      */
     public DBFField(String fieldName, String fieldTypeCode, int fieldLength, int decimalLength) {
         this(fieldName, FieldType.valueOf(fieldTypeCode), fieldLength, decimalLength);
@@ -190,9 +192,9 @@ public class DBFField {
     /**
      * Creates a field, specifying the field name, field type, and field length,
      * with a decimal length of zero.
-     * @param fieldName the name of the field.
+     * @param fieldName the name of the field
      * @param fieldTypeCode the code for the field type (e.g. "C")
-     * @param fieldLength the length of the field.
+     * @param fieldLength the length of the field
      */
     public DBFField(String fieldName, String fieldTypeCode, int fieldLength) {
         this(fieldName, fieldTypeCode, fieldLength, 0);
@@ -201,9 +203,9 @@ public class DBFField {
     /**
      * Creates a field, specifying the field name, field type, and field length,
      * with a decimal length of zero.
-     * @param fieldName the name of the field.
-     * @param fieldType the field type.
-     * @param fieldLength the length of the field.
+     * @param fieldName the name of the field
+     * @param fieldType the field type
+     * @param fieldLength the length of the field
      */
     public DBFField(String fieldName, FieldType fieldType, int fieldLength) {
         this(fieldName, fieldType, fieldLength, 0);
@@ -234,7 +236,7 @@ public class DBFField {
 
     /**
      * Gets the name of the field.
-     * @return The name of the field.
+     * @return the name of the field
      */
     public String getFieldName() {
         return fieldName;
@@ -242,7 +244,7 @@ public class DBFField {
 
     /**
      * Sets the name of the field.
-     * @param fieldName The name of the field.
+     * @param fieldName the name of the field
      */
     public void setFieldName(String fieldName) {
         this.fieldName = fieldName;
@@ -250,7 +252,7 @@ public class DBFField {
 
     /**
      * Gets the length of the decimal portion of the field.
-     * @return The length of the decimal portion of the field.
+     * @return the length of the decimal portion of the field
      */
     public int getDecimalLength() {
         return decimalLength;
@@ -258,7 +260,7 @@ public class DBFField {
 
     /**
      * Sets the length of the decimal portion of the field.
-     * @param decimalLength The length of the decimal portion of the field.
+     * @param decimalLength the length of the decimal portion of the field
      */
     public void setDecimalLength(int decimalLength) {
         this.decimalLength = decimalLength;
@@ -266,7 +268,7 @@ public class DBFField {
 
     /**
      * Gets the length of the field.
-     * @return The length of the field.
+     * @return the length of the field
      */
     public int getFieldLength() {
         return fieldLength;
@@ -274,7 +276,7 @@ public class DBFField {
 
     /**
      * Sets the length of the field.
-     * @param fieldLength The length of the field.
+     * @param fieldLength the length of the field
      */
     public void setFieldLength(int fieldLength) {
         this.fieldLength = fieldLength;
@@ -282,7 +284,7 @@ public class DBFField {
 
     /**
      * Gets the type of the field.
-     * @return The type of the field.
+     * @return the type of the field
      */
     public FieldType getFieldType() {
         return fieldType;
@@ -290,7 +292,7 @@ public class DBFField {
 
     /**
      * Sets the type of the field.
-     * @param fieldType The type of the field.
+     * @param fieldType the type of the field
      */
     public void setFieldType(FieldType fieldType) {
         this.fieldType = fieldType;

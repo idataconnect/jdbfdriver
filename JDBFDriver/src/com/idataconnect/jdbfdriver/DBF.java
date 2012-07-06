@@ -735,8 +735,8 @@ public class DBF {
                                     dbtChannel.position(0);
                                     headerBuf.limit(64);
                                     do {
-                                        if (dbtChannel.read(headerBuf) == -1) // EOF
-                                        {
+                                        if (dbtChannel.read(headerBuf) == -1) {
+                                            // EOF
                                             throw new IOException("End of file encountered while reading DBT header");
                                         }
                                     } while (headerBuf.hasRemaining());
@@ -987,9 +987,10 @@ public class DBF {
     /**
      * Replaces the specified field's value in the current DBF. Field numbers
      * start at 1.
-     * @param fieldNumber The field number.
-     * @param value The new value.
-     * @throws IOException If an I/O error occurs.
+     * @param fieldNumber the field number
+     * @param value the new value
+     * @return the value that was replaced
+     * @throws IOException if an I/O error occurs
      */
     public Object replace(int fieldNumber, Object value) throws IOException {
         if (fieldNumber <= 0)
@@ -1611,7 +1612,7 @@ public class DBF {
 
                     // Write value, truncating it if necessary, so it doesn't overflow
                     // the field.
-                    byte[] valueBytes = f.getDefaultValue().getValue().toString().getBytes();
+                    byte[] valueBytes = f.getDefaultValue().getValue().toString().getBytes(); // TODO i18n
                     fieldBuffer.put(valueBytes, 0, Math.min(valueBytes.length, f.getFieldLength()));
                     fieldBuffer.position(0);
                     while (fieldBuffer.hasRemaining())
@@ -1679,7 +1680,7 @@ public class DBF {
         structure.setRecordLength(recordLength);
 
         // Header length
-        structure.setHeaderLength((short)(32 + 32 * structure.getFields().size() + 1));
+        structure.setHeaderLength((short) (32 + 32 * structure.getFields().size() + 1));
     }
 
     /**

@@ -31,8 +31,11 @@
 package com.idataconnect.jdbfdriver;
 
 import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.RandomAccess;
 
 /**
  * Represents the structure of a DBF file. The most important attributes are
@@ -58,7 +61,7 @@ public class DBFStructure implements Serializable {
     /**
      * Gets whether the DBF file is paired with a DBT file. This indicates
      * that a memo field is present.
-     * @return whether the DBF file is DBT paired.
+     * @return whether the DBF file is DBT paired
      */
     public boolean isDbtPaired() {
         return dbtPaired;
@@ -67,7 +70,7 @@ public class DBFStructure implements Serializable {
     /**
      * Sets whether the DBF file is paired with a DBT file. This indicates
      * that a memo field is present.
-     * @param dbtPaired whether a DBT file is paired with the DBF file.
+     * @param dbtPaired whether a DBT file is paired with the DBF file
      */
     public void setDbtPaired(boolean dbtPaired) {
         this.dbtPaired = dbtPaired;
@@ -75,7 +78,7 @@ public class DBFStructure implements Serializable {
 
     /**
      * Gets the last updated date of the DBF file.
-     * @return the last updated date of the DBF file.
+     * @return the last updated date of the DBF file
      */
     public DBFDate getLastUpdated() {
         return lastUpdated;
@@ -83,7 +86,7 @@ public class DBFStructure implements Serializable {
 
     /**
      * Sets the last updated date of the DBF file.
-     * @param lastUpdated the last updated date of the DBF file.
+     * @param lastUpdated the last updated date of the DBF file
      */
     public void setLastUpdated(DBFDate lastUpdated) {
         this.lastUpdated = lastUpdated;
@@ -91,23 +94,29 @@ public class DBFStructure implements Serializable {
 
     /**
      * Gets the fields in the DBF file.
-     * @return a list of fields.
+     * @return a list of fields
      */
     public List<DBFField> getFields() {
-        return fields;
+        return Collections.unmodifiableList(fields);
     }
 
     /**
      * Sets the list of fields in the DBF file.
-     * @param fields a list of fields.
+     * @param fields a list of fields
      */
     public void setFields(List<DBFField> fields) {
-        this.fields = fields;
+        if (fields instanceof RandomAccess) {
+            this.fields = fields;
+        } else {
+            List<DBFField> newFields = new ArrayList<DBFField>(fields.size());
+            newFields.addAll(fields);
+            this.fields = newFields;
+        }
     }
 
     /**
      * Gets the number of records in the DBF file.
-     * @return the number of records in the DBF file.
+     * @return the number of records in the DBF file
      */
     public int getNumberOfRecords() {
         return numberOfRecords;
@@ -115,7 +124,7 @@ public class DBFStructure implements Serializable {
 
     /**
      * Sets the number of records in the DBF file.
-     * @param numberOfRecords the number of records in the DBF file.
+     * @param numberOfRecords the number of records in the DBF file
      */
     public void setNumberOfRecords(int numberOfRecords) {
         this.numberOfRecords = numberOfRecords;
@@ -123,7 +132,7 @@ public class DBFStructure implements Serializable {
 
     /**
      * Gets the length of the DBF file's header
-     * @return the length of the DBF file's header.
+     * @return the length of the DBF file's header
      */
     public short getHeaderLength() {
         return headerLength;
@@ -131,7 +140,7 @@ public class DBFStructure implements Serializable {
 
     /**
      * Sets the length of the DBF file's header.
-     * @param headerLength
+     * @param headerLength the length of the DBF file's header
      */
     public void setHeaderLength(short headerLength) {
         this.headerLength = headerLength;
@@ -139,7 +148,7 @@ public class DBFStructure implements Serializable {
 
     /**
      * Gets the length of each record in the DBF file.
-     * @return the length of each record in the DBF file.
+     * @return the length of each record in the DBF file
      */
     public short getRecordLength() {
         return recordLength;
@@ -147,7 +156,7 @@ public class DBFStructure implements Serializable {
 
     /**
      * Sets the length of each record in the DBF file.
-     * @param recordLength the length of each record in the DBF file.
+     * @param recordLength the length of each record in the DBF file
      */
     public void setRecordLength(short recordLength) {
         this.recordLength = recordLength;
@@ -157,7 +166,7 @@ public class DBFStructure implements Serializable {
      * Gets whether a transaction is currently active in the DBF file. This
      * is unsupported, and the value is simply what has been read
      * from the DBF file's header.
-     * @return whether a transaction is active.
+     * @return whether a transaction is active
      */
     public boolean isTransactionActive() {
         return transactionActive;
@@ -166,7 +175,7 @@ public class DBFStructure implements Serializable {
     /**
      * Sets whether a transaction is active. This is unsupported,
      * and the value is simply what has been read from the DBF file's header.
-     * @param transactionActive
+     * @param transactionActive whether a transaction is active
      */
     public void setTransactionActive(boolean transactionActive) {
         this.transactionActive = transactionActive;
@@ -175,7 +184,7 @@ public class DBFStructure implements Serializable {
     /**
      * Gets whether the data is encrypted. This is unsupported and the value
      * is simply what has been read from the DBF file's header.
-     * @return whether the data is encrypted.
+     * @return whether the data is encrypted
      */
     public boolean isDataEncrypted() {
         return dataEncrypted;
@@ -184,7 +193,7 @@ public class DBFStructure implements Serializable {
     /**
      * Sets whether the data is encrypted. This is unsupported and the
      * value is simply what has been read from the DBF file's header.
-     * @param dataEncrypted
+     * @param dataEncrypted whether the data is encrypted
      */
     public void setDataEncrypted(boolean dataEncrypted) {
         this.dataEncrypted = dataEncrypted;
@@ -194,7 +203,7 @@ public class DBFStructure implements Serializable {
      * Gets whether an MDX file is paired with this DBF file. Since MDX files
      * are currently unsupported, any modifications to DBF files with MDX files
      * will invalidate the contents of the MDX file.
-     * @return whether an MDX file is paired with this DBF file.
+     * @return whether an MDX file is paired with this DBF file
      */
     public boolean isMdxPaired() {
         return mdxPaired;
@@ -204,7 +213,7 @@ public class DBFStructure implements Serializable {
      * Sets whether an MDX file is paired with this DBF file. Since MDX files
      * are currently unsupported, any modifications to DBF files with MDX
      * files will invalidate the contents of the MDX file.
-     * @param mdxPaired whether an MDX file is paired with this DBF file.
+     * @param mdxPaired whether an MDX file is paired with this DBF file
      */
     public void setMdxPaired(boolean mdxPaired) {
         this.mdxPaired = mdxPaired;
@@ -213,7 +222,7 @@ public class DBFStructure implements Serializable {
     /**
      * Whether a memo field exists. This is presumably the same value as
      * <code>isDbtPaired()</code>.
-     * @return whether a memo field exists.
+     * @return whether a memo field exists
      */
     public boolean isMemoExists() {
         return memoExists;
@@ -222,7 +231,7 @@ public class DBFStructure implements Serializable {
     /**
      * Sets whether a memo field exists. This is presumably the same value
      * as <code>isDbtPaired</code>.
-     * @param memoExists whether a memo field exists.
+     * @param memoExists whether a memo field exists
      */
     public void setMemoExists(boolean memoExists) {
         this.memoExists = memoExists;

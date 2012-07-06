@@ -67,9 +67,9 @@ public class DBFDate implements Serializable, Comparable<DBFDate> {
 
     /**
      * Constructs a new date with the given month, day, and year.
-     * @param month The month of the new date.
-     * @param day The day of the new date.
-     * @param year The year of the new date.
+     * @param month the month of the new date
+     * @param day the day of the new date
+     * @param year the year of the new date
      */
     public DBFDate(int month, int day, int year) {
         this.month = (byte) month;
@@ -79,7 +79,7 @@ public class DBFDate implements Serializable, Comparable<DBFDate> {
 
     /**
      * Gets the current date as a DBF date.
-     * @return A DBF date representing the current date.
+     * @return a DBF date representing the current date
      */
     public static DBFDate getCurrentDate() {
         DBFDate current = new DBFDate();
@@ -102,7 +102,7 @@ public class DBFDate implements Serializable, Comparable<DBFDate> {
 
     /**
      * Checks if this date instance is a blank date.
-     * @return Whether the date is blank.
+     * @return whether the date is blank
      */
     public boolean isBlank() {
         return day == 0;
@@ -133,20 +133,20 @@ public class DBFDate implements Serializable, Comparable<DBFDate> {
         final int e = (int) (365.25 * (y + 4716));
         final int f = (int) (30.6001 * (m + 1));
 
-        return (int) c + d + e + f - 1525;
+        return c + d + e + f - 1525;
     }
 
     /**
      * Creates a DBF date from the given Julian day.
      *
      * @param julianDay the Julian day to convert from, as returned
-     * by {@link #getJulianDay}.
+     * by {@link #getJulianDay}
      * @return a new DBF date instance
      */
     public static DBFDate fromJulianDay(int julianDay) {
         final int z = julianDay;
         final int w = (int) ((z - 1867216.25) / 36524.25);
-        final int x = (int) (w / 4);
+        final int x = w / 4;
         final int a = z + 1 + w - x;
         final int b = a + 1525;
         final int c = (int) ((b - 122.1) / 365.25);
@@ -163,8 +163,8 @@ public class DBFDate implements Serializable, Comparable<DBFDate> {
     /**
      * Calculates the day of the week that the date represented by this date
      * object, occurs on. Sunday is zero, Monday is one, etc.
-     * @return The day of the week that this date occurs on, or -1 if this
-     * is an empty date.
+     * @return the day of the week that this date occurs on, or -1 if this
+     * is an empty date
      */
     public int getDayOfWeek() {
         if (day == 0)
@@ -190,7 +190,7 @@ public class DBFDate implements Serializable, Comparable<DBFDate> {
 
     /**
      * Gets the day of week represented by this date, localized in English.
-     * @return The day of week as an English localized string.
+     * @return the day of week as an English localized string
      */
     public String getDayOfWeekEn() {
         int dayOfWeek = getDayOfWeek();
@@ -202,7 +202,9 @@ public class DBFDate implements Serializable, Comparable<DBFDate> {
 
     /**
      * {@inheritDoc}
+     * <p>
      * This implementation compares based on the Julian days.
+     * </p>
      */
     public int compareTo(DBFDate other) {
         return Integer.valueOf(getJulianDay()).compareTo(Integer.valueOf(other.getJulianDay()));
@@ -212,7 +214,7 @@ public class DBFDate implements Serializable, Comparable<DBFDate> {
      * Returns the date in U.S. xBase style, including the century. For example,
      * for August 1, 1980, <tt>"{8/1/1980}"</tt> is returned. If the date is
      * blank, <tt>"{  /  /    }"</tt> is returned.
-     * @return The date represented by this date object.
+     * @return the date represented by this date object
      */
     @Override
     public String toString() {
@@ -224,8 +226,10 @@ public class DBFDate implements Serializable, Comparable<DBFDate> {
 
     /**
      * {@inheritDoc}
+     * <p>
      * This implementation considers two dates equal if their Julian days
      * are equal.
+     * </p>
      */
     @Override
     public boolean equals(Object obj) {
@@ -238,8 +242,10 @@ public class DBFDate implements Serializable, Comparable<DBFDate> {
 
     /**
      * {@inheritDoc}
+     * <p>
      * This implementation uses the integer hash code of the
      * Julian day.
+     * </p>
      */
     @Override
     public int hashCode() {

@@ -45,8 +45,8 @@ public class DBFValue {
 
     /**
      * Constructs a new value with the given field and its object value.
-     * @param field the DBF field which this is a value for.
-     * @param value the <code>Object</code> value which contains the data.
+     * @param field the DBF field which this is a value for
+     * @param value the <code>Object</code> value which contains the data
      */
     public DBFValue(DBFField field, Object value) {
         this.fieldType = field.getFieldType();
@@ -56,7 +56,7 @@ public class DBFValue {
     /**
      * Sets the <code>Object</code> value for this DBF value, which contains
      * the data.
-     * @param value
+     * @param value the data value
      */
     public void setValue(Object value) {
         // Handle the case where they might set a date using a java.util.Date.
@@ -71,7 +71,7 @@ public class DBFValue {
 
     /**
      * Gets the <code>Object</code> value for this DBF value.
-     * @return the data value.
+     * @return the data value
      */
     public Object getValue() {
         return value;
@@ -80,7 +80,7 @@ public class DBFValue {
     /**
      * Gets the data as a <code>String</code>. This is equivalent to calling
      * <code>getValue().toString()</code>.
-     * @return the value as a string.
+     * @return the value as a string
      */
     public String getString() {
         return value.toString();
@@ -89,7 +89,7 @@ public class DBFValue {
     /**
      * Gets the data as a <code>double</code>.
      * @throws IllegalStateException if the value is not a numeric type.
-     * @return the value as a <code>double</code>.
+     * @return the value as a <code>double</code>
      */
     public double getDouble() {
         if (!isNumeric())
@@ -101,7 +101,7 @@ public class DBFValue {
     /**
      * Gets the data as an <code>int</code>.
      * @throws IllegalStateException if the value is not a numeric type.
-     * @return the value as an <code>int</code>.
+     * @return the value as an <code>int</code>
      */
     public int getInt() {
         if (!isNumeric())
@@ -113,7 +113,7 @@ public class DBFValue {
     /**
      * Gets the data as a <code>BigDecimal</code>.
      * @throws IllegalStateException if the value is not a numeric type.
-     * @return the value as a <code>BigDecimal</code>.
+     * @return the value as a <code>BigDecimal</code>
      */
     public BigDecimal getBigDecimal() {
         if (!isNumeric()) {
@@ -126,7 +126,7 @@ public class DBFValue {
     /**
      * Gets the data as a <code>boolean</code>.
      * @throws IllegalStateException if the value is not a boolean type.
-     * @return the value as a <code>boolean</code>.
+     * @return the value as a <code>boolean</code>
      */
     public boolean getBoolean() {
         if (!(value instanceof Boolean))
@@ -137,7 +137,7 @@ public class DBFValue {
 
     /**
      * Gets whether the value is a numeric type.
-     * @return whether the value is a numeric type.
+     * @return whether the value is a numeric type
      */
     public boolean isNumeric() {
         return fieldType.isNumericField();
@@ -145,7 +145,7 @@ public class DBFValue {
 
     /**
      * Gets whether the value is a character type.
-     * @return whether the value is a character type.
+     * @return whether the value is a character type
      */
     public boolean isString() {
         return fieldType.isCharacterField();
@@ -153,8 +153,8 @@ public class DBFValue {
 
     /**
      * Gets the data as a <code>DBFDate</code>.
-     * @throws IllegalStateException if the value is not a date type.
-     * @return the value as a DBF date.
+     * @throws IllegalStateException if the value is not a date type
+     * @return the value as a DBF date
      */
     public DBFDate getDate() {
         if (!(value instanceof DBFDate))
@@ -165,7 +165,7 @@ public class DBFValue {
 
     /**
      * Gets the data as bytes.
-     * @return the value as as byte array.
+     * @return the value as as byte array
      */
     public byte[] getBytes() {
         switch (getFieldType()) {
@@ -179,7 +179,7 @@ public class DBFValue {
 
     /**
      * Gets the field type of this value.
-     * @return the field type of this value.
+     * @return the field type of this value
      */
     public DBFField.FieldType getFieldType() {
         return fieldType;
@@ -187,7 +187,9 @@ public class DBFValue {
 
     /**
      * {@inheritDoc}
+     * <p>
      * This implementation returns a value suitable for display to the user.
+     * </p>
      */
     @Override
     public String toString() {
