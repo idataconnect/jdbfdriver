@@ -122,10 +122,13 @@ public class NDX {
 
     public void gotoBlock(int block) throws IOException {
         blockNumber = block;
-        readBlock();
+
+        if (blockNumber != block) {
+            readBlock();
+        }
     }
     
-    private void readBlock() throws IOException {
+    public void readBlock() throws IOException {
         if (blockNumber <= 0) {
             throw new IllegalStateException("Invalid block number: " + blockNumber);
         }
@@ -154,7 +157,6 @@ public class NDX {
 
     private int find(Object value, int blockNumber) throws IOException {
         gotoBlock(blockNumber);
-        readBlock();
         final int keysInBlock = keysInBlock();
 
         int nextBlock, recordNumber;
