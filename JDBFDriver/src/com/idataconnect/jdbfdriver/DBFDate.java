@@ -167,8 +167,9 @@ public class DBFDate implements Serializable, Comparable<DBFDate> {
      * is an empty date
      */
     public int getDayOfWeek() {
-        if (day == 0)
+        if (day == 0) {
             return -1;
+        }
 
         int m = month;
         int y = year;
@@ -183,8 +184,9 @@ public class DBFDate implements Serializable, Comparable<DBFDate> {
 
         int dow = (day + (7 + 31 * (m - 1)) / 12 + y + y / 4 - y / 100 + y / 400) % 7;
         dow += 2;
-        if (dow > 6)
+        if (dow > 6) {
             dow -= 2;
+        }
         return dow;
     }
 
@@ -194,10 +196,11 @@ public class DBFDate implements Serializable, Comparable<DBFDate> {
      */
     public String getDayOfWeekEn() {
         int dayOfWeek = getDayOfWeek();
-        if (dayOfWeek == -1)
+        if (dayOfWeek == -1) {
             return "";
-        else
+        } else {
             return EN_DAY_NAMES[dayOfWeek];
+        }
     }
 
     /**
@@ -218,10 +221,11 @@ public class DBFDate implements Serializable, Comparable<DBFDate> {
      */
     @Override
     public String toString() {
-        if (isBlank())
+        if (isBlank()) {
             return "{  /  /    }";
-        else
+        } else {
             return "{" + month + "/" + day + "/" + year + "}";
+        }
     }
 
     /**
@@ -233,8 +237,9 @@ public class DBFDate implements Serializable, Comparable<DBFDate> {
      */
     @Override
     public boolean equals(Object obj) {
-        if (! (obj instanceof DBFDate))
+        if (! (obj instanceof DBFDate)) {
             return false;
+        }
 
         DBFDate other = (DBFDate) obj;
         return getJulianDay() == other.getJulianDay();

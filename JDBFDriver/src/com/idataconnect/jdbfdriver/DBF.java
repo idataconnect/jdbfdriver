@@ -131,8 +131,9 @@ public class DBF {
      * @throws IOException IF an I/O error occurs.
      */
     public static DBF use(String relativeDbfPath) throws FileNotFoundException, IOException {
-        if (!relativeDbfPath.toLowerCase().endsWith(".dbf"))
+        if (!relativeDbfPath.toLowerCase().endsWith(".dbf")) {
             relativeDbfPath += ".dbf";
+        }
         return use(new File(currentDirectory + File.separatorChar + relativeDbfPath));
     }
 
@@ -163,17 +164,19 @@ public class DBF {
             }
             while (buf.position() < 32 && channel.read(buf) != -1) {}
             buf.flip();
-            if (buf.remaining() < 33)
+            if (buf.remaining() < 33) {
                 throw new IOException("File too small to be a valid DBF");
+            }
 
             // Basic structure
             byte signature = buf.get();
 
             // Check creator version
             int version = signature & 7; // 0b00000111
-            if (version != 3) // 0b00000011
+            if (version != 3) { // 0b00000011
                 log.log(Level.WARNING, "DBF [%s] has an unsupported signature (version ID %x)",
                         new Object[] {dbfFile, version});
+            }
 
             // Check DBT flag
             boolean dbtPaired = (signature & 128) == 128; // 0b10000000
@@ -190,8 +193,9 @@ public class DBF {
             structure.setNumberOfRecords(buf.getInt()); // Unsigned int, that won't overflow
             structure.setHeaderLength((short)(buf.getShort() & 0xffff)); // Unsigned short
             structure.setRecordLength((short)(buf.getShort() & 0xffff)); // Unsigned short
-            if (structure.getRecordLength() == 0)
+            if (structure.getRecordLength() == 0) {
                 throw new IOException("Record length is zero");
+            }
             buf.position(buf.position() + 2); // Skip reserved
             structure.setTransactionActive(buf.get() != 0x00);
             structure.setDataEncrypted(buf.get() != 0x00);
@@ -210,8 +214,9 @@ public class DBF {
                         // Read at least one byte
                         int numRead;
                         while ((numRead = channel.read(buf)) == 0) {}
-                        if (numRead == -1) // EOF
+                        if (numRead == -1) {
                             throw new IOException("End of file encountered while reading header structure");
+                        }
 
                         buf.flip();
                     }
@@ -222,15 +227,16 @@ public class DBF {
                 DBFField field = new DBFField();
                 String fieldName = new String(headerBytes, 0, 11);
                 for (int count = 0; count < 11; count++) {
-                    if (fieldName.charAt(count) == '\u0000') // null terminator
+                    if (fieldName.charAt(count) == '\0') // null terminator
                     {
                         fieldName = fieldName.substring(0, count);
                         break;
                     }
                 }
                 fieldName = fieldName.trim();
-                if (fieldName.length() == 0)
+                if (fieldName.length() == 0) {
                     throw new IOException("Blank field name encountered");
+                }
                 field.setFieldName(fieldName);
 
                 // Field type
@@ -264,8 +270,9 @@ public class DBF {
                     int numRead;
                     while ((numRead = channel.read(buf)) == 0) {
                     }
-                    if (numRead == -1) // EOF
+                    if (numRead == -1) {
                         throw new IOException("End of file encountered while reading header structure");
+                    }
 
                     buf.flip();
                 }
@@ -302,8 +309,9 @@ public class DBF {
                 buf.put((byte) 0x1a); // end of file
                 channel.position(structure.getHeaderLength() - 1);
                 buf.flip();
-                while (buf.hasRemaining())
+                while (buf.hasRemaining()) {
                     channel.write(buf);
+                }
             }
 
             if (structure.getLastUpdated() == null) {
@@ -318,17 +326,20 @@ public class DBF {
             channel.position(0);
 
             FileLock lock = null;
-            if (isFileLockingEnabled())
+            if (isFileLockingEnabled()) {
                 lock = channel.lock(0, 32, false);
+            }
 
             try {
                 buf.clear();
 
                 byte signature = 3;
-                if (structure.isDbtPaired())
+                if (structure.isDbtPaired()) {
                     signature = (byte) (signature | 128);
-                if (structure.isMemoExists())
+                }
+                if (structure.isMemoExists()) {
                     signature = (byte) (signature | 8);
+                }
                 buf.put(signature);
 
                 buf.put((byte) (structure.getLastUpdated().year - 1900));
@@ -379,8 +390,9 @@ public class DBF {
                     byte[] fieldNameBytes = field.getFieldName().getBytes();
                     buf.put(fieldNameBytes);
                     // Pad rest of name bytes with nulls
-                    for (int count = 0; count < (11 - fieldNameBytes.length); count++)
+                    for (int count = 0; count < (11 - fieldNameBytes.length); count++) {
                         buf.put((byte) 0);
+                    }
 
                     assert(buf.position() == 11);
 
@@ -424,12 +436,14 @@ public class DBF {
                     assert(buf.position() == 32);
 
                     buf.flip();
-                    while (buf.hasRemaining())
+                    while (buf.hasRemaining()) {
                         channel.write(buf);
+                    }
                 }
             } finally {
-                if (isFileLockingEnabled())
+                if (isFileLockingEnabled()) {
                     lock.release();
+                }
             }
         } finally {
             if (isThreadSafetyEnabled()) {
@@ -602,12 +616,13 @@ public class DBF {
 
         currentRecordDeleted = false;
 
-        if (recordNumber <= 0 || getStructure().getNumberOfRecords() == 0)
+        if (recordNumber <= 0 || getStructure().getNumberOfRecords() == 0) {
             this.recordNumber = 0;
-        else if (recordNumber > getStructure().getNumberOfRecords())
+        } else if (recordNumber > getStructure().getNumberOfRecords()) {
             this.recordNumber = -1;
-        else
+        } else {
             this.recordNumber = recordNumber;
+        }
 
         readRecord(recordNumber);
 
@@ -641,8 +656,9 @@ public class DBF {
      * @throws IOException If an I/O error occurs.
      */
     protected void readRecord(int recordNumber) throws IOException {
-        if (values == null || values.length != structure.getFields().size())
+        if (values == null || values.length != structure.getFields().size()) {
             values = new DBFValue[structure.getFields().size()];
+        }
 
         if ((bof() && structure.getNumberOfRecords() == 0) || eof()) {
             // Set default values
@@ -656,21 +672,24 @@ public class DBF {
                 if (isThreadSafetyEnabled()) {
                     threadLock.lock();
                 }
-                if (bof())
+                if (bof()) {
                     recordNumber = 1;
+                }
                 FileChannel channel = randomAccessFile.getChannel();
                 channel.position(structure.getHeaderLength() + (recordNumber - 1) * structure.getRecordLength());
                 FileLock lock = null;
-                if (isFileLockingEnabled())
+                if (isFileLockingEnabled()) {
                     lock = channel.lock(structure.getHeaderLength() + (recordNumber - 1) * structure.getRecordLength(), structure.getRecordLength(), true);
+                }
                 ByteBuffer recordBuffer;
                 try {
                     buf.clear();
                     if (structure.getRecordLength() <= buf.remaining()) {
                         // The record will fit in the buffer
                         while (buf.position() < structure.getRecordLength()) {
-                            if (channel.read(buf) == -1)
+                            if (channel.read(buf) == -1) {
                                 throw new IOException("End of file encountered while reading record");
+                            }
                         }
 
                         recordBuffer = buf;
@@ -681,8 +700,9 @@ public class DBF {
 
                         while (recordBuffer.position() < structure.getRecordLength()) {
                             buf.clear();
-                            if (buf.remaining() > recordBuffer.remaining())
+                            if (buf.remaining() > recordBuffer.remaining()) {
                                 buf.limit(recordBuffer.remaining());
+                            }
                             switch (channel.read(buf)) {
                                 case -1: // EOF
                                     throw new IOException("End of file encountered while reading record");
@@ -695,8 +715,9 @@ public class DBF {
                         }
                     }
                 } finally {
-                    if (lock != null)
+                    if (lock != null) {
                         lock.release();
+                    }
                 }
 
                 recordBuffer.flip();
@@ -708,18 +729,19 @@ public class DBF {
                     recordBuffer.get(fieldData);
                     switch (currentField.getFieldType()) {
                         case C:
-                            if (isAutoTrimEnabled())
+                            if (isAutoTrimEnabled()) {
                                 values[count] = new DBFValue(currentField, new String(fieldData).trim());
-                            else
+                            } else {
                                 values[count] = new DBFValue(currentField, new String(fieldData));
+                            }
                             break;
                         case M:
                         case B:
                         case G:
                             String dataString = new String(fieldData).trim();
-                            if (dataString.length() == 0)
+                            if (dataString.length() == 0) {
                                 values[count] = new DBFValue(currentField, "");
-                            else {
+                            } else {
                                 // buf is busy at this point, so allocate another
                                 // one that is large enough to read the header
                                 // and possibly the field's value (if large enough).
@@ -746,30 +768,34 @@ public class DBF {
                                     // Read the block length
                                     headerBuf.position(20);
                                     int blockLength = headerBuf.getShort() & 0xffff; // Unsigned short
-                                    if (blockLength < 64)
+                                    if (blockLength < 64) {
                                         throw new IOException("DBT appears to be corrupt. Block length (" + blockLength + ") < 64 blocks (512 bytes)");
+                                    }
 
                                     // Move to the block where the memo field is stored.
                                     dbtChannel.position(blockNumber * blockLength);
                                     headerBuf.clear();
                                     headerBuf.limit(8);
                                     while (headerBuf.position() < 8) {
-                                        if (dbtChannel.read(headerBuf) == -1) // EOF
+                                        if (dbtChannel.read(headerBuf) == -1) {
                                             throw new IOException("End of file encountered while reading DBT block header");
+                                        }
                                     }
                                     headerBuf.position(0);
                                     byte byte1 = headerBuf.get();
                                     byte byte2 = headerBuf.get();
                                     byte byte3 = headerBuf.get();
                                     byte byte4 = headerBuf.get();
-                                    if (byte1 != (byte) 0xff || byte2 != (byte) 0xff || byte3 != (byte) 0x08 || byte4 != (byte) 0x00)
+                                    if (byte1 != (byte) 0xff || byte2 != (byte) 0xff || byte3 != (byte) 0x08 || byte4 != (byte) 0x00) {
                                         throw new IOException("DBT appears to be corrupt. Block header start: " + String.format("0x%02x 0x%02x 0x%02x 0x%02x", byte1, byte2, byte3, byte4));
+                                    }
                                     int valueLength = headerBuf.getInt(); // 32-bit unsigned that won't overflow
                                     valueLength -= 8; // Remove 8 byte header length
 
                                     // Acquire shared lock
-                                    if (isFileLockingEnabled())
+                                    if (isFileLockingEnabled()) {
                                         dbtChannel.lock(blockNumber * blockLength, valueLength + 8, true);
+                                    }
 
                                     // Use headerBuf if it's large enough. Otherwise
                                     // allocate a new buffer.
@@ -781,8 +807,9 @@ public class DBF {
                                         headerBuf.limit(valueLength);
                                         dbtRecordBuffer = headerBuf;
                                     }
-                                    while (dbtRecordBuffer.hasRemaining())
+                                    while (dbtRecordBuffer.hasRemaining()) {
                                         dbtChannel.read(dbtRecordBuffer);
+                                    }
                                     dbtRecordBuffer.flip();
                                     byte[] valueBytes = new byte[valueLength];
                                     dbtRecordBuffer.get(valueBytes);
@@ -797,15 +824,17 @@ public class DBF {
                         case N:
                         case F:
                             dataString = new String(fieldData).trim();
-                            if (dataString.length() == 0)
+                            if (dataString.length() == 0) {
                                 values[count] = new DBFValue(currentField, currentField.getDefaultValue().getValue());
-                            else
+                            } else {
                                 values[count] = new DBFValue(currentField, new BigDecimal(dataString));
+                            }
                             break;
                         case D:
-                            if (fieldData.length == 0 || fieldData[0] == ' ') // Blank date
+                            if (fieldData.length == 0 || fieldData[0] == ' ') {
+                                 // Blank date
                                 values[count] = new DBFValue(currentField, new DBFDate(0, 0, 0));
-                            else {
+                            } else {
                                 int year = Integer.parseInt(new String(fieldData, 0, 4));
                                 int month = Integer.parseInt(new String(fieldData, 4, 2));
                                 int day = Integer.parseInt(new String(fieldData, 6, 2));
@@ -848,8 +877,9 @@ public class DBF {
         Iterator<DBFField> i = getStructure().getFields().iterator();
         for (int count = 0; i.hasNext(); count++) {
             DBFField f = i.next();
-            if (f.getFieldName().equalsIgnoreCase(fieldName))
+            if (f.getFieldName().equalsIgnoreCase(fieldName)) {
                 return count + 1;
+            }
         }
 
         return 0;
@@ -978,10 +1008,11 @@ public class DBF {
      */
     public DBFValue getValue(String fieldName) throws IllegalArgumentException {
         int fieldNumber = getFieldNumberByName(fieldName);
-        if (fieldNumber == 0)
+        if (fieldNumber == 0) {
             throw new IllegalArgumentException("Field " + fieldName + " does not exist");
-        else
+        } else {
             return getValue(fieldNumber);
+        }
     }
 
     /**
@@ -993,18 +1024,20 @@ public class DBF {
      * @throws IOException if an I/O error occurs
      */
     public Object replace(int fieldNumber, Object value) throws IOException {
-        if (fieldNumber <= 0)
+        if (fieldNumber <= 0) {
             throw new IllegalArgumentException("Field number must be greater than zero");
-        else if (fieldNumber > structure.getFields().size())
+        } else if (fieldNumber > structure.getFields().size()) {
             throw new IllegalArgumentException("Field number greater than the number of fields in the table ("
                     + fieldNumber + " > " + structure.getFields().size() + ")");
-        else if (bof())
+        } else if (bof()) {
             throw new IllegalStateException("Cannot replace a value at beginning of file");
-        else if (eof())
+        } else if (eof()) {
             throw new IllegalStateException("Cannot replace a value at end of file");
+        }
 
-        if (value instanceof DBFValue)
+        if (value instanceof DBFValue) {
             value = ((DBFValue) value).getValue();
+        }
 
         Object oldValue = values[fieldNumber - 1].getValue();
         values[fieldNumber - 1].setValue(value);
@@ -1032,8 +1065,9 @@ public class DBF {
                     File dbtFile = getDbtFile();
 
                     // Create the DBT file if it is missing
-                    if (!dbtFile.exists())
+                    if (!dbtFile.exists()) {
                         createDbt();
+                    }
 
                     // Open the DBT file
                     RandomAccessFile dbtRandomAccessFile = new RandomAccessFile(
@@ -1045,13 +1079,16 @@ public class DBF {
                         dbtChannel.position(20);
                         buf.position(0);
                         buf.limit(2);
-                        while (buf.hasRemaining())
-                            if (dbtChannel.read(buf) == -1) // EOF
+                        while (buf.hasRemaining()) {
+                            if (dbtChannel.read(buf) == -1) {
                                 throw new IOException("End of file encountered while reading DBT structure");
+                            }
+                        }
                         buf.position(0);
                         int blockLength = buf.getShort() & 0xffff;
-                        if (blockLength < 64)
+                        if (blockLength < 64) {
                             throw new IOException("DBT block length less than 64 bytes");
+                        }
 
                         // Calculate the length of both the old value and the new
                         // value.
@@ -1082,8 +1119,9 @@ public class DBF {
                                     + (recordNumber - 1) * structure.getRecordLength());
                             buf.position(0);
                             buf.limit(10);
-                            while (buf.hasRemaining())
+                            while (buf.hasRemaining()) {
                                 channel.read(buf);
+                            }
                             buf.position(0);
                             byte[] blockNumberBytes = new byte[10];
                             buf.get(blockNumberBytes);
@@ -1099,8 +1137,9 @@ public class DBF {
                         }
                         if (appendNewRecord) {
                             // Exclusive lock the "next available block" field
-                            if (isFileLockingEnabled())
+                            if (isFileLockingEnabled()) {
                                 dbtChannel.lock(0, 4, false);
+                            }
 
                             // Read the next available block
                             buf.position(0);
@@ -1166,19 +1205,20 @@ public class DBF {
                         // Otherwise allocate another buffer large enough for the
                         // new value.
                         ByteBuffer fieldBuffer;
-                        if (buf.capacity() < newValueLength)
+                        if (buf.capacity() < newValueLength) {
                             fieldBuffer = ByteBuffer.allocate(newValueLength);
-                        else {
+                        } else {
                             fieldBuffer = buf;
                             fieldBuffer.position(0);
                             fieldBuffer.limit(newValueLength);
                         }
 
                         // Fill the buffer with the new value
-                        if (f.getFieldType().equals(DBFField.FieldType.M))
+                        if (f.getFieldType().equals(DBFField.FieldType.M)) {
                             fieldBuffer.put(((String) value).getBytes());
-                        else
+                        } else {
                             fieldBuffer.put((byte[]) value);
+                        }
 
                         // Write the value to the DBT file
                         fieldBuffer.position(0);
@@ -1194,8 +1234,9 @@ public class DBF {
                         int remainderPosition = (int) dbtChannel.position() + remainderLength;
                         buf.clear();
                         buf.limit(Math.min(buf.capacity(), remainderLength));
-                        while (buf.hasRemaining())
+                        while (buf.hasRemaining()) {
                             buf.put((byte) 0); // null
+                        }
                         while (dbtChannel.position() < remainderPosition) {
                             buf.position(0);
                             buf.limit(Math.min(remainderPosition
@@ -1211,17 +1252,18 @@ public class DBF {
                     // Try to use the direct buffer if it is large enough. Otherwise
                     // allocate another buffer large enough for the field.
                     ByteBuffer fieldBuffer;
-                    if (buf.capacity() < f.getFieldLength())
+                    if (buf.capacity() < f.getFieldLength()) {
                         fieldBuffer = ByteBuffer.allocate(f.getFieldLength());
-                    else {
+                    } else {
                         fieldBuffer = buf;
                         fieldBuffer.position(0);
                         fieldBuffer.limit(f.getFieldLength());
                     }
 
                     // Fill the buffer with spaces
-                    while (fieldBuffer.hasRemaining())
+                    while (fieldBuffer.hasRemaining()) {
                         fieldBuffer.put((byte) ' ');
+                    }
                     fieldBuffer.position(0);
 
                     // Write value, truncating it if necessary, so it doesn't overflow
@@ -1232,15 +1274,18 @@ public class DBF {
                     channel.position(structure.getHeaderLength() + fieldSkipLength
                             + (recordNumber - 1) * structure.getRecordLength());
                     FileLock lock = null;
-                    if (isFileLockingEnabled())
-                    lock = channel.lock(structure.getHeaderLength() + fieldSkipLength
-                            + (recordNumber - 1) * structure.getRecordLength(), f.getFieldLength(), false);
+                    if (isFileLockingEnabled()) {
+                        lock = channel.lock(structure.getHeaderLength() + fieldSkipLength
+                                + (recordNumber - 1) * structure.getRecordLength(), f.getFieldLength(), false);
+                    }
                     try {
-                        while (fieldBuffer.hasRemaining())
+                        while (fieldBuffer.hasRemaining()) {
                             channel.write(fieldBuffer);
+                        }
                     } finally {
-                        if (isFileLockingEnabled())
+                        if (isFileLockingEnabled()) {
                             lock.release();
+                        }
                     }
             }
         } finally {
@@ -1262,11 +1307,13 @@ public class DBF {
      * @throws IOException If an I/O error occurs.
      */
     public static DBF create(File dbfFile, DBFStructure structure) throws IOException {
-        if (!dbfFile.getName().toLowerCase().endsWith(".dbf"))
+        if (!dbfFile.getName().toLowerCase().endsWith(".dbf")) {
             dbfFile = new File(dbfFile.getAbsolutePath() + ".dbf");
+        }
 
-        if (structure.getFields() == null || structure.getFields().isEmpty())
+        if (structure.getFields() == null || structure.getFields().isEmpty()) {
             throw new IllegalArgumentException("The DBF structure has no fields.");
+        }
 
         for (DBFField field : structure.getFields()) {
             if (field.getFieldType().isMemoField()) {
@@ -1277,8 +1324,9 @@ public class DBF {
         structure.setNumberOfRecords(0);
         DBF dbf = new DBF(dbfFile, new RandomAccessFile(dbfFile, "rw"
                 + (synchronousWritesEnabled ? "s" : "")), structure);
-        if (dbf.getStructure().isDbtPaired())
+        if (dbf.getStructure().isDbtPaired()) {
             dbf.createDbt();
+        }
         dbf.writeStructure();
         dbf.gotoRecord(0);
         return dbf;
@@ -1309,15 +1357,17 @@ public class DBF {
             buf.clear();
             buf.putInt(1);
             buf.flip();
-            while (buf.hasRemaining())
+            while (buf.hasRemaining()) {
                 dbtChannel.write(buf);
+            }
 
             // Write the block size
             buf.clear();
             buf.putInt(64);
             buf.flip();
-            while (buf.hasRemaining())
+            while (buf.hasRemaining()) {
                 dbtChannel.write(buf);
+            }
 
             // Write the name of the DBF file.
             String filename;
@@ -1380,8 +1430,9 @@ public class DBF {
      */
     public static DBF create(File dbfFile, Iterable<DBFField> fields) throws IOException {
         DBFStructure structure = new DBFStructure();
-        for (DBFField field : fields)
+        for (DBFField field : fields) {
             structure.getFields().add(field);
+        }
 
         return create(dbfFile, structure);
     }
@@ -1417,10 +1468,11 @@ public class DBF {
      */
     public void replace(String fieldName, Object value) throws IOException {
         int fieldNumber = getFieldNumberByName(fieldName);
-        if (fieldNumber == 0)
+        if (fieldNumber == 0) {
             throw new IllegalArgumentException("Field " + fieldName + " does not exist");
-        else
+        } else {
             replace(fieldNumber, value);
+        }
     }
 
     /**
@@ -1456,10 +1508,11 @@ public class DBF {
      * @throws IOException If an I/O error occurs.
      */
     protected void setDeleted(boolean delete) throws IOException {
-        if (bof())
+        if (bof()) {
             throw new IllegalStateException("Cannot delete or undelete at beginning of file");
-        else if (eof())
+        } else if (eof()) {
             throw new IllegalStateException("Cannot delete or undelete at end of file");
+        }
 
         if (currentRecordDeleted != delete) {
             FileLock lock = null;
@@ -1481,8 +1534,9 @@ public class DBF {
                     readStructure();
                 }
                 channel.position(structure.getHeaderLength() + (recordNumber - 1) * structure.getRecordLength());
-                while (buf.hasRemaining())
+                while (buf.hasRemaining()) {
                     channel.write(buf);
+                }
             } finally {
                 if (lock != null) {
                     lock.release();
@@ -1515,8 +1569,9 @@ public class DBF {
 
         if (!isFileLockingEnabled() && !isThreadSafetyEnabled()
                 && structure.getLastUpdated() != null
-                && structure.getLastUpdated().equals(new DBFDate(month, day, year)))
+                && structure.getLastUpdated().equals(new DBFDate(month, day, year))) {
             return;
+        }
 
         // Write the date
         try {
@@ -1532,14 +1587,17 @@ public class DBF {
             FileChannel channel = randomAccessFile.getChannel();
             channel.position(1);
             FileLock lock = null;
-            if (isFileLockingEnabled())
+            if (isFileLockingEnabled()) {
                 lock = channel.lock(1, 3, false);
+            }
             try {
-                while (buf.hasRemaining())
+                while (buf.hasRemaining()) {
                     channel.write(buf);
+                }
             } finally {
-                if (isFileLockingEnabled())
+                if (isFileLockingEnabled()) {
                     lock.release();
+                }
             }
         } finally {
             if (isThreadSafetyEnabled()) {
@@ -1573,8 +1631,9 @@ public class DBF {
                 // even garbage after it.
                 if (structure.getHeaderLength() +
                         (1 + structure.getRecordLength() * (structure.getNumberOfRecords() + 1))
-                        > 2147483648L)
+                        > 2147483648L) {
                     throw new IOException("File too large to append.");
+                }
 
                 // Lock and write the new record
                 channel.position(structure.getHeaderLength()
@@ -1588,8 +1647,9 @@ public class DBF {
                 buf.limit(1);
                 buf.put((byte) ' '); // Not deleted
                 buf.position(0);
-                while (buf.hasRemaining())
+                while (buf.hasRemaining()) {
                     channel.write(buf);
+                }
                 Iterator<DBFField> i = structure.getFields().iterator();
                 while (i.hasNext()) {
                     DBFField f = i.next();
@@ -1597,17 +1657,18 @@ public class DBF {
                     // Try to use the direct buffer if it is large enough. Otherwise
                     // allocate another buffer large enough for the field.
                     ByteBuffer fieldBuffer;
-                    if (buf.capacity() < f.getFieldLength())
+                    if (buf.capacity() < f.getFieldLength()) {
                         fieldBuffer = ByteBuffer.allocate(f.getFieldLength());
-                    else {
+                    } else {
                         fieldBuffer = buf;
                         fieldBuffer.clear();
                         fieldBuffer.limit(f.getFieldLength());
                     }
 
                     // Fill the buffer with spaces
-                    while (fieldBuffer.hasRemaining())
+                    while (fieldBuffer.hasRemaining()) {
                         fieldBuffer.put((byte) ' ');
+                    }
                     fieldBuffer.position(0);
 
                     // Write value, truncating it if necessary, so it doesn't overflow
@@ -1615,8 +1676,9 @@ public class DBF {
                     byte[] valueBytes = f.getDefaultValue().getValue().toString().getBytes(); // TODO i18n
                     fieldBuffer.put(valueBytes, 0, Math.min(valueBytes.length, f.getFieldLength()));
                     fieldBuffer.position(0);
-                    while (fieldBuffer.hasRemaining())
+                    while (fieldBuffer.hasRemaining()) {
                         channel.write(fieldBuffer);
+                    }
                 }
 
                 // Write the EOF mark
@@ -1624,22 +1686,25 @@ public class DBF {
                 buf.limit(1);
                 buf.put((byte) 0x1a);
                 buf.position(0);
-                while (buf.hasRemaining())
+                while (buf.hasRemaining()) {
                     channel.write(buf);
+                }
 
                 // Go back and bump the number of records in the table
                 channel.position(4);
                 buf.clear();
-                while (buf.position() < 4)
+                while (buf.position() < 4) {
                     channel.read(buf);
+                }
                 buf.flip();
                 int numberOfRecords = buf.getInt() + 1;
                 buf.clear();
                 buf.putInt(numberOfRecords);
                 buf.flip();
                 channel.position(4);
-                while (buf.hasRemaining())
+                while (buf.hasRemaining()) {
                     channel.write(buf);
+                }
 
                 // Update the number of records in the in-memory structure
                 structure.setNumberOfRecords(numberOfRecords);
@@ -1675,8 +1740,9 @@ public class DBF {
     protected void calculateLengths() {
         // Record length
         short recordLength = 1;
-        for (DBFField field : structure.getFields())
+        for (DBFField field : structure.getFields()) {
             recordLength += field.getFieldLength();
+        }
         structure.setRecordLength(recordLength);
 
         // Header length

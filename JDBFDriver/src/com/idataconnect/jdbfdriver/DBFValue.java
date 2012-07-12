@@ -92,10 +92,11 @@ public class DBFValue {
      * @return the value as a <code>double</code>
      */
     public double getDouble() {
-        if (!isNumeric())
+        if (!isNumeric()) {
             throw new IllegalStateException("getDouble() called on a value which is not numeric");
-        else
+        } else {
             return ((Number) value).doubleValue();
+        }
     }
 
     /**
@@ -104,10 +105,11 @@ public class DBFValue {
      * @return the value as an <code>int</code>
      */
     public int getInt() {
-        if (!isNumeric())
+        if (!isNumeric()) {
             throw new IllegalStateException("getInt() called on a value which is not numeric");
-        else
+        } else {
             return ((Number) value).intValue();
+        }
     }
 
     /**
@@ -129,10 +131,11 @@ public class DBFValue {
      * @return the value as a <code>boolean</code>
      */
     public boolean getBoolean() {
-        if (!(value instanceof Boolean))
+        if (!(value instanceof Boolean)) {
             throw new IllegalStateException("getBoolean() called on a value which is not a boolean");
-        else
+        } else {
             return ((Boolean) value).booleanValue();
+        }
     }
 
     /**
@@ -157,10 +160,11 @@ public class DBFValue {
      * @return the value as a DBF date
      */
     public DBFDate getDate() {
-        if (!(value instanceof DBFDate))
+        if (!(value instanceof DBFDate)) {
             throw new IllegalStateException("getDate() called on a value which is not a date");
-        else
+        } else {
             return (DBFDate) value;
+        }
     }
 
     /**
