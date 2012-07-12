@@ -99,11 +99,11 @@ public class NDX {
         keyLength = buf.getShort() & 0xffff;
         keysPerBlock = buf.getShort() & 0xffff;
         dataType = IndexDataType.valueOf(buf.getShort() & 0xffff);
-        int keyRecordSize = buf.getInt();
+        int keyRecordSize = buf.getShort() & 0xffff;
         assert(keyRecordSize() == keyRecordSize)
-                : "Invalid key record size";
-        buf.position(buf.position() + 1); // Skip reserved
-        unique = buf.get() != 0;
+                : "Invalid key record size. Disk=" + keyRecordSize + "; Asserted=" + keyRecordSize();
+        buf.position(buf.position() + 2); // Skip reserved
+        unique = buf.getShort() != 0;
         char[] keyChars = new char[buf.remaining()];
         int i;
         for (i = 0; buf.hasRemaining(); i++) {
@@ -126,6 +126,9 @@ public class NDX {
     }
     
     private void readBlock() throws IOException {
+        if (blockNumber <= 0) {
+            throw new IllegalStateException("Invalid block number: " + blockNumber);
+        }
         FileChannel channel = randomAccessFile.getChannel();
         buf.position(0);
         buf.limit(BLOCK_SIZE);
@@ -135,15 +138,30 @@ public class NDX {
         }
     }
 
-    public int find(String value) throws IOException {
-        gotoBlock(startBlock);
+    /**
+     * Finds a DBF field number by searching the index for the given value.
+     *
+     * @param value the value to search the index for, matching the type of
+     * field that the index supports
+     *
+     * @return the field number in the DBF which contains the given value, or
+     * <em>-1</em> if the value was not found in the index
+     * @throws IOException if an I/O error occurs
+     */
+    public int find(Object value) throws IOException {
+        return find(value, startBlock);
+    }
+
+    private int find(Object value, int blockNumber) throws IOException {
+        gotoBlock(blockNumber);
         readBlock();
         final int keysInBlock = keysInBlock();
+
         int nextBlock, recordNumber;
+        int compareResult = 0;
         for (int i = 0; i < keysInBlock; i++) {
             nextBlock = nextBlock(i);
             recordNumber = recordNumber(i);
-            Comparable<?> comparable;
             switch (dataType) {
                 default:
                 case CHARACTER:
@@ -151,20 +169,40 @@ public class NDX {
                     byte b;
                     int j;
                     for (j = 0; j < bytes.length; j++) {
-                        b = buf.get(12 + i * keyRecordSize());
+                        b = buf.get(12 + i * keyRecordSize() + j);
                         if (b == 0) {
                             break;
                         } else {
                             bytes[j] = b;
                         }
                     }
-                    comparable = new String(bytes, 0, j);
+                    compareResult = ((String) value).compareTo(new String(bytes, 0, j));
                     break;
+                case NUMERIC:
+                    break;
+                case DATE:
+                    throw new UnsupportedOperationException("NDX does not support dates. Hint: Convert the date to a string or number first");
+            }
+
+            if (compareResult >= 0) {
+                if (nextBlock == 0) {
+                    // Leaf
+                    return recordNumber;
+                } else {
+                    // Branch
+                    return find(value, nextBlock);
+                }
             }
         }
+
         return -1;
     }
-    
+
+    /**
+     * Fetches the next block pointer for the given key which exists in
+     * <code>buf</code> after a call to {@link #readBlock}.
+     * @param key the zero based key within the block
+     */
     private int nextBlock(int key) {
         return buf.getInt(4 + key * keyRecordSize());
     }
@@ -172,17 +210,9 @@ public class NDX {
     private int recordNumber(int key) {
         return buf.getInt(8 + key * keyRecordSize());
     }
-    
+
     private int keysInBlock() {
         return buf.getInt(0);
-    }
-    
-    public int find(int value)  throws IOException {
-        return -1;
-    }
-    
-    public int find(DBFDate value) throws IOException {
-        return -1;
     }
 
     /**
@@ -199,7 +229,7 @@ public class NDX {
      */
     public void close() throws IOException {
         randomAccessFile.close();
-    }    
+    }
 
     /**
      * Prints the current NDX file's structure to the requested print stream.
