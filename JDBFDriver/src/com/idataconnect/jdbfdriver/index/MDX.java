@@ -35,6 +35,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
@@ -61,6 +62,18 @@ public class MDX {
     
     public static MDX open(File mdxFile, ReentrantLock threadLock) throws IOException {
         final RandomAccessFile randomAccessFile = new RandomAccessFile(mdxFile, "rw" + (DBF.isSynchronousWritesEnabled() ? "s" : ""));
-        return new MDX(mdxFile, randomAccessFile, threadLock);
+        final MDX mdx = new MDX(mdxFile, randomAccessFile, threadLock);
+        mdx.readStructure();
+        return mdx;
+    }
+    
+    protected void readStructure() throws IOException {
+        FileChannel channel = randomAccessFile.getChannel();
+        channel.position(0);
+        buf.position(0);
+        buf.limit(blockSize);
+        while (buf.hasRemaining()) {
+            channel.read(buf);
+        }
     }
 }
