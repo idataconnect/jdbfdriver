@@ -36,9 +36,11 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
+import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.GregorianCalendar;
 import java.util.Iterator;
+import java.util.List;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -56,6 +58,11 @@ dbf.close();<br/>
  * @author ben
  */
 public class DBF {
+    
+    /** The record number representing the beginning of the file. */
+    public static final int RECORD_NUMBER_BOF = 0;
+    /** The record number representing the end of the file. */
+    public static final int RECORD_NUMBER_EOF = -1;
     
     private static final Logger log = Logger.getLogger(DBF.class.getName());
 
@@ -203,7 +210,7 @@ public class DBF {
             structure.setMdxPaired(buf.get() != 0x00);
             buf.position(buf.position() + 3); // Skip code page byte and 2 reserved bytes
 
-            structure.getFields().clear();
+            List<DBFField> fields = new ArrayList<DBFField>(32);
             // Header structure
             do {
                 byte[] headerBytes = new byte[32];
@@ -260,7 +267,7 @@ public class DBF {
                     field.setFieldLength(headerBytes[16]);
                     field.setDecimalLength(headerBytes[17]);
                 }
-                structure.getFields().add(field);
+                fields.add(field);
 
                 // Make sure there is at least another byte in the buffer
                 if (!buf.hasRemaining()) {
@@ -277,6 +284,7 @@ public class DBF {
                     buf.flip();
                 }
             } while (buf.get(buf.position()) != 0x0d); // Keep reading header structure until terminator is encountered
+            structure.setFields(fields);
         } finally {
             if (isThreadSafetyEnabled()) {
                 threadLock.unlock();
@@ -584,7 +592,7 @@ public class DBF {
      * @return Whether the record pointer is at the beginning of the file.
      */
     public boolean bof() {
-        return recordNumber == 0;
+        return recordNumber == RECORD_NUMBER_BOF;
     }
 
     /**
@@ -592,7 +600,7 @@ public class DBF {
      * @return Whether the record pointer is at the end of the file.
      */
     public boolean eof() {
-        return recordNumber == -1;
+        return recordNumber == RECORD_NUMBER_EOF;
     }
 
     /**
@@ -604,10 +612,13 @@ public class DBF {
     }
 
     /**
-     * Moves to the specified record number.
-     * @param recordNumber The record number to go to.
-     * @return The record number after moving.
-     * @throws IOException If an I/O error occurs.
+     * Moves to the specified record number. Note that the returned record
+     * number may be {@link #RECORD_NUMBER_BOF} or {@link #RECORD_NUMBER_EOF},
+     * which are <em>0</em> and <em>-1</em> respectively.
+     *
+     * @param recordNumber the record number to go to
+     * @return the record number after moving
+     * @throws IOException If an I/O error occurs
      */
     public int gotoRecord(int recordNumber) throws IOException {
         // Re-read the header to obtain the number of records, in case another

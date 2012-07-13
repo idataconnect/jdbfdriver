@@ -31,7 +31,6 @@
 package com.idataconnect.jdbfdriver.index;
 
 import com.idataconnect.jdbfdriver.DBF;
-import com.idataconnect.jdbfdriver.DBFDate;
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintStream;
@@ -42,7 +41,7 @@ import java.nio.channels.FileChannel;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
- * NDX index file routines.
+ * NDX index implementation.
  */
 public class NDX {
     
@@ -121,9 +120,8 @@ public class NDX {
     }
 
     public void gotoBlock(int block) throws IOException {
-        blockNumber = block;
-
         if (blockNumber != block) {
+            blockNumber = block;
             readBlock();
         }
     }
@@ -178,7 +176,14 @@ public class NDX {
                             bytes[j] = b;
                         }
                     }
-                    compareResult = ((String) value).compareTo(new String(bytes, 0, j));
+                    // Pad the search key with spaces so that the length is
+                    // equal to the NDX key length
+                    StringBuilder sb = new StringBuilder(keyLength);
+                    sb.append(value.toString());
+                    while (sb.length() < keyLength) {
+                        sb.append(' ');
+                    }
+                    compareResult = sb.toString().compareTo(new String(bytes, 0, j));
                     break;
                 case NUMERIC:
                     break;
