@@ -223,19 +223,19 @@ public class NDX {
     }
 
     /**
-     * Prints the current NDX file's structure to <code>System.out</code>.
-     */
-    public void printStructure() {
-        printStructure(System.out);
-    }
-
-    /**
      * Closes the current file and releases resources taken by the connection to
      * this NDX file.
      * @throws IOException if an I/O error occurs
      */
     public void close() throws IOException {
         randomAccessFile.close();
+    }
+
+    /**
+     * Prints the current NDX file's structure to <code>System.out</code>.
+     */
+    public void printStructure() {
+        printStructure(System.out);
     }
 
     /**

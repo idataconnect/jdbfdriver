@@ -872,10 +872,19 @@ public class DBF {
     /**
      * Gets a file object pointing to the DBT file which would be paired with
      * this DBF file.
-     * @return A file object.
+     * @return a <code>File</code> instance
      */
     protected File getDbtFile() {
         return new File(dbfFile.getAbsolutePath().substring(0, dbfFile.getAbsolutePath().length() - 3) + "dbt");
+    }
+
+    /*
+     * Gets a file object pointing to the production MDX file which would be
+     * paired with this DBF file.
+     * @return a <code>File</code> instance
+     */
+    protected File getProductionMdxFile() {
+        return new File(dbfFile.getAbsolutePath().substring(0, dbfFile.getAbsolutePath().length() - 3) + "mdx");
     }
 
     /**
