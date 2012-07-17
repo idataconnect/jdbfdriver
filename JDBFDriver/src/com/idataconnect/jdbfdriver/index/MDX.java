@@ -87,6 +87,7 @@ public class MDX {
         private boolean unique;
         private boolean descending;
         private int rootPage;
+        private int sizeInPages;
     }
     
     public static MDX open(File mdxFile) throws IOException {
@@ -190,8 +191,8 @@ public class MDX {
             keyFormat = buf.get();
             tags[tagIndex].descending = (keyFormat & 0x08) == 0x08;
             tags[tagIndex].unique = (keyFormat & 0x40) == 0x40;
-            tags[tagIndex].rightTag = buf.get() & 0xff;
             tags[tagIndex].leftTag = buf.get() & 0xff;
+            tags[tagIndex].rightTag = buf.get() & 0xff;
             tags[tagIndex].backwardTag = buf.get() & 0xff;
             buf.position(buf.position() + 1);
             keyType = buf.get();
@@ -221,7 +222,17 @@ public class MDX {
             buf.position(0);
 
             tags[tagIndex].rootPage = (int) (buf.getInt() & 0xffffffffL);
+            tags[tagIndex].sizeInPages = (int) (buf.getInt() & 0xffffffffL);
         }
+    }
+
+    /**
+     * Closes the current file and releases resources taken by the connection to
+     * this MDX file.
+     * @throws IOException if an I/O error occurs
+     */
+    public void close() throws IOException {
+        randomAccessFile.close();
     }
 
     /**
@@ -258,8 +269,14 @@ public class MDX {
             }
 
             out.printf(" Name:           %17s\n", tags[i].name);
+            out.printf(" Descending:     %17b\n", tags[i].descending);
+            out.printf(" Unique:         %17b\n", tags[i].unique);
             out.printf(" Header Page:    %17s\n", tags[i].headerPage);
             out.printf(" Root Page:      %17s\n", tags[i].rootPage);
+            out.printf(" Size In Pages   %17s\n", tags[i].sizeInPages);
+            out.printf(" Left Tag:       %17s\n", tags[i].leftTag);
+            out.printf(" Right Tag:      %17s\n", tags[i].rightTag);
+            out.printf(" Backward Tag:   %17s\n", tags[i].backwardTag);
         }
 
         out.println("----------------------------------");
