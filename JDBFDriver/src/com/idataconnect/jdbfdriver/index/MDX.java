@@ -39,7 +39,6 @@ import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
-import java.util.List;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -68,6 +67,8 @@ public class MDX {
     private DBFDate lastUpdateDate;
     private Tag[] tags;
 
+    private int blockNumber;
+
     private MDX(File mdxFile, RandomAccessFile randomAccessFile, ReentrantLock threadLock) {
         this.mdxFile = mdxFile;
         this.randomAccessFile = randomAccessFile;
@@ -83,11 +84,14 @@ public class MDX {
         private int leftTag;
         private int rightTag;
         private int backwardTag;
-        private int keyType;
         private boolean unique;
         private boolean descending;
-        private int rootPage;
+        private int rootBlock;
         private int sizeInPages;
+        private int keyLength;
+        private int keysPerBlock;
+        private int secondaryKeyType;
+        private int keyItemLength;
     }
     
     public static MDX open(File mdxFile) throws IOException {
@@ -160,7 +164,7 @@ public class MDX {
         lastUpdateDate = new DBFDate(m, d, y);
 
         // Tags
-        byte keyType, keyFormat;
+        byte keyType, keyFormat, keyFormatInHeader, keyTypeInHeader;
         tags = new Tag[tagsInUse];
         for (int tagIndex = 0; tagIndex < tags.length; tagIndex++) {
             tags[tagIndex] = new Tag();
@@ -221,8 +225,170 @@ public class MDX {
             }
             buf.position(0);
 
-            tags[tagIndex].rootPage = (int) (buf.getInt() & 0xffffffffL);
+            tags[tagIndex].rootBlock = (int) (buf.getInt() & 0xffffffffL);
             tags[tagIndex].sizeInPages = (int) (buf.getInt() & 0xffffffffL);
+            keyFormatInHeader = buf.get();
+            if (keyFormatInHeader != keyFormat) {
+                throw new IOException("Key format byte in header != key format byte in tag descriptor: " + keyFormat + " != " + keyFormatInHeader);
+            }
+            keyTypeInHeader = buf.get();
+            if (keyTypeInHeader != keyType) {
+                throw new IOException("Key type byte in header != key type byte in tag descriptor: " + keyType + " != " + keyTypeInHeader);
+            }
+
+            buf.position(buf.position() + 2);
+            tags[tagIndex].keyLength = buf.getShort() & 0xffff;
+            tags[tagIndex].keysPerBlock = buf.getShort() & 0xffff;
+            tags[tagIndex].secondaryKeyType = buf.getShort() & 0xffff;
+            tags[tagIndex].keyItemLength = buf.getShort() & 0xffff;
+            buf.position(buf.position() + 3);
+            if ((buf.get() != 0) != tags[tagIndex].unique) {
+                throw new IOException("Unique flag in header != unique flag in tag descriptor: Key Format=" + keyFormat);
+            }
+        }
+    }
+
+    /**
+     * Moves to the given block number and reads the block. Block numbers start
+     * at index <em>1</em>.
+     *
+     * @param block the block number to move to
+     * @throws IOException if an I/O error occurs
+     */
+    public void gotoBlock(int block) throws IOException {
+        if (blockNumber != block) {
+            blockNumber = block;
+            readBlock();
+        }
+    }
+
+    private int keysInBlock() {
+        return buf.getInt(0);
+    }
+
+    /**
+     * Finds a DBF field number by searching the given tag in the index for the
+     * given value.
+     *
+     * @param tagName the name of the tag within the index file
+     * @param value the value to search the index for, matching the type of
+     * field that the index supports
+     *
+     * @return the field number in the DBF which contains the given value, or
+     * <em>-1</em> if the value was not found in the index
+     * @throws IOException if an I/O error occurs
+     */
+    public int find(String tagName, Object value) throws IOException {
+        // Find the start block for the given tag
+        for (Tag tag : tags) {
+            if (tag.name.equalsIgnoreCase(tagName)) {
+                return find(value, tag, tag.rootBlock);
+            }
+        }
+
+        throw new IOException(String.format("Tag [%s] not found in MDX [%s]",
+                tagName, mdxFile.getName()));
+    }
+
+    private static int keyRecordSize(Tag tag) {
+        return (int) Math.ceil(tag.keyLength / 4f) * 4 + 8;
+    }
+
+    /**
+     * Fetches the next block pointer for the given key which exists in
+     * <code>buf</code> after a call to {@link #readBlock}. This is only
+     * applicable for keys which are not leaves. For leaf keys,
+     * {@link #recordNumber} should be used instead, in order to fetch the
+     * record number.
+     * @param key the zero based key within the block
+     * @return the next block number, or <em>0</em> if the given key is a leaf
+     */
+    private int nextBlock(int key, Tag tag) {
+        return buf.getInt(4 + key * keyRecordSize(tag));
+    }
+
+    /**
+     * Fetches the record number for the given key which exists in
+     * <code>buf</code> after a call to {@link readBlock}. This is only
+     * applicable for keys which are leaves. For non-leave keys,
+     * {@link #nextBlock} should be used instead, in order to fetch the
+     * next block number which is used to continue the search.
+     * @param key the zero based key within the block
+     * @return the record number, or <em>0</em> if the given key is not a leaf
+     */
+    private int recordNumber(int key, Tag tag) {
+        return buf.getInt(8 + key * keyRecordSize(tag));
+    }
+
+    private int find(Object value, Tag tag, int blockNumber) throws IOException {
+        gotoBlock(blockNumber);
+        final int keysInBlock = keysInBlock();
+
+        int nextBlock, recordNumber;
+        int compareResult = 0;
+        for (int i = 0; i < keysInBlock; i++) {
+            nextBlock = nextBlock(i, tag);
+            recordNumber = recordNumber(i, tag);
+            switch (tag.dataType) {
+                case DATE: {
+                    DBFDate date = (DBFDate) value;
+                    value = String.valueOf(date.year) + String.valueOf(date.month) + String.valueOf(date.day);
+                }
+                default:
+                case CHARACTER:
+                    byte[] bytes = new byte[keyRecordSize(tag) - 8];
+                    byte b;
+                    int j;
+                    for (j = 0; j < bytes.length; j++) {
+                        b = buf.get(12 + i * keyRecordSize(tag) + j);
+                        if (b == 0) {
+                            break;
+                        } else {
+                            bytes[j] = b;
+                        }
+                    }
+                    // Pad the search key with spaces so that the length is
+                    // equal to the NDX key length
+                    StringBuilder sb = new StringBuilder(tag.keyLength);
+                    sb.append(value.toString());
+                    while (sb.length() < tag.keyLength) {
+                        sb.append(' ');
+                    }
+                    compareResult = sb.toString().compareTo(new String(bytes, 0, j));
+                    break;
+                case NUMERIC:
+                    break;
+            }
+
+            if (compareResult >= 0) {
+                if (nextBlock == 0) {
+                    // Leaf
+                    return recordNumber;
+                } else {
+                    // Branch
+                    return find(value, tag, nextBlock);
+                }
+            }
+        }
+
+        return -1;
+    }
+
+    /**
+     * Re-reads the current block.
+     *
+     * @throws IOException if an I/O error occurs
+     */
+    public void readBlock() throws IOException {
+        if (blockNumber <= 0) {
+            throw new IllegalStateException("Invalid block number: " + blockNumber);
+        }
+        FileChannel channel = randomAccessFile.getChannel();
+        buf.position(0);
+        buf.limit(blockSize);
+        channel.position(512 * blockNumber);
+        while (buf.hasRemaining()) {
+            channel.read(buf);
         }
     }
 
@@ -272,11 +438,15 @@ public class MDX {
             out.printf(" Descending:     %17b\n", tags[i].descending);
             out.printf(" Unique:         %17b\n", tags[i].unique);
             out.printf(" Header Page:    %17s\n", tags[i].headerPage);
-            out.printf(" Root Page:      %17s\n", tags[i].rootPage);
+            out.printf(" Root Page:      %17s\n", tags[i].rootBlock);
             out.printf(" Size In Pages   %17s\n", tags[i].sizeInPages);
             out.printf(" Left Tag:       %17s\n", tags[i].leftTag);
             out.printf(" Right Tag:      %17s\n", tags[i].rightTag);
             out.printf(" Backward Tag:   %17s\n", tags[i].backwardTag);
+            out.printf(" Key Length:     %17s\n", tags[i].keyLength);
+            out.printf(" Keys Per Block  %17s\n", tags[i].keysPerBlock);
+            out.printf(" 2nd Key Type:   %17s\n", tags[i].secondaryKeyType);
+            out.printf(" Key Item Length:%17s\n", tags[i].keyItemLength);
         }
 
         out.println("----------------------------------");

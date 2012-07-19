@@ -119,13 +119,25 @@ public class NDX {
         return (int) Math.ceil(keyLength / 4f) * 4 + 8;
     }
 
+    /**
+     * Moves to the given block number and reads the block. Block numbers start
+     * at index <em>1</em>.
+     *
+     * @param block the block number to move to
+     * @throws IOException if an I/O error occurs
+     */
     public void gotoBlock(int block) throws IOException {
         if (blockNumber != block) {
             blockNumber = block;
             readBlock();
         }
     }
-    
+
+    /**
+     * Re-reads the current block.
+     *
+     * @throws IOException if an I/O error occurs
+     */
     public void readBlock() throws IOException {
         if (blockNumber <= 0) {
             throw new IllegalStateException("Invalid block number: " + blockNumber);
@@ -207,13 +219,26 @@ public class NDX {
 
     /**
      * Fetches the next block pointer for the given key which exists in
-     * <code>buf</code> after a call to {@link #readBlock}.
+     * <code>buf</code> after a call to {@link #readBlock}. This is only
+     * applicable for keys which are not leaves. For leaf keys,
+     * {@link #recordNumber} should be used instead, in order to fetch the
+     * record number.
      * @param key the zero based key within the block
+     * @return the next block number, or <em>0</em> if the given key is a leaf
      */
     private int nextBlock(int key) {
         return buf.getInt(4 + key * keyRecordSize());
     }
 
+    /**
+     * Fetches the record number for the given key which exists in
+     * <code>buf</code> after a call to {@link readBlock}. This is only
+     * applicable for keys which are leaves. For non-leave keys,
+     * {@link #nextBlock} should be used instead, in order to fetch the
+     * next block number which is used to continue the search.
+     * @param key the zero based key within the block
+     * @return the record number, or <em>0</em> if the given key is not a leaf
+     */
     private int recordNumber(int key) {
         return buf.getInt(8 + key * keyRecordSize());
     }
