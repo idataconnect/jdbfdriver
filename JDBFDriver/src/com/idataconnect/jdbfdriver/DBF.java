@@ -687,10 +687,10 @@ public class DBF {
                     recordNumber = 1;
                 }
                 FileChannel channel = randomAccessFile.getChannel();
-                channel.position(structure.getHeaderLength() + (recordNumber - 1) * structure.getRecordLength());
+                channel.position((long) structure.getHeaderLength() + (recordNumber - 1) * structure.getRecordLength());
                 FileLock lock = null;
                 if (isFileLockingEnabled()) {
-                    lock = channel.lock(structure.getHeaderLength() + (recordNumber - 1) * structure.getRecordLength(), structure.getRecordLength(), true);
+                    lock = channel.lock((long) structure.getHeaderLength() + (recordNumber - 1) * structure.getRecordLength(), (long) structure.getRecordLength(), true);
                 }
                 ByteBuffer recordBuffer;
                 try {
@@ -784,7 +784,7 @@ public class DBF {
                                     }
 
                                     // Move to the block where the memo field is stored.
-                                    dbtChannel.position(blockNumber * blockLength);
+                                    dbtChannel.position((long) blockNumber * blockLength);
                                     headerBuf.clear();
                                     headerBuf.limit(8);
                                     while (headerBuf.position() < 8) {
@@ -805,7 +805,7 @@ public class DBF {
 
                                     // Acquire shared lock
                                     if (isFileLockingEnabled()) {
-                                        dbtChannel.lock(blockNumber * blockLength, valueLength + 8, true);
+                                        dbtChannel.lock((long) blockNumber * blockLength, (long) valueLength + 8, true);
                                     }
 
                                     // Use headerBuf if it's large enough. Otherwise
@@ -1136,7 +1136,7 @@ public class DBF {
                         if (newValueBlocksRequired <= oldValueBlocksRequired) {
                             // Use the existing blocks; Find the block number.
                             channel.position(structure.getHeaderLength() + fieldSkipLength
-                                    + (recordNumber - 1) * structure.getRecordLength());
+                                    + (long) (recordNumber - 1) * structure.getRecordLength());
                             buf.position(0);
                             buf.limit(10);
                             while (buf.hasRemaining()) {
@@ -1152,7 +1152,7 @@ public class DBF {
                                 int blockNumber = Integer.parseInt(blockNumberString);
 
                                 // Seek to the existing block plus 4 bytes
-                                dbtChannel.position(blockLength * blockNumber + 4);
+                                dbtChannel.position(blockLength * (long) blockNumber + 4);
                             }
                         }
                         if (appendNewRecord) {
@@ -1184,7 +1184,7 @@ public class DBF {
                             // Write the block number of the new value to the
                             // column in the DBF file.
                             channel.position(structure.getHeaderLength() + fieldSkipLength
-                                    + (recordNumber - 1) * structure.getRecordLength());
+                                    + (long) (recordNumber - 1) * structure.getRecordLength());
                             buf.position(0);
                             buf.limit(10);
                             buf.put(String.format("%10d", nextAvailableBlock).getBytes());
@@ -1194,7 +1194,7 @@ public class DBF {
                             } while (buf.hasRemaining());
 
                             // Seek to the next available block
-                            dbtChannel.position(nextAvailableBlock * blockLength);
+                            dbtChannel.position((long) nextAvailableBlock * blockLength);
 
                             // Write the 4 bytes that start a DBT block header
                             buf.position(0);
@@ -1210,7 +1210,7 @@ public class DBF {
                         }
                         // Store the start of the block so we can pad the
                         // remainder with nulls after writing the value.
-                        int startOfBlock = (int) dbtChannel.position() - 4;
+                        long startOfBlock = dbtChannel.position() - 4;
 
                         // Write the length of the new value, including the 8 header bytes
                         buf.position(0);
@@ -1249,9 +1249,9 @@ public class DBF {
                         // Pad the remainder of the block with nulls so that
                         // the file size is divisible by the block size. This
                         // is not strictly necessary.
-                        int remainderLength = newValueBlocksRequired * blockLength
-                                - ((int) dbtChannel.position() - startOfBlock);
-                        int remainderPosition = (int) dbtChannel.position() + remainderLength;
+                        int remainderLength = (int) (newValueBlocksRequired * blockLength
+                                - (dbtChannel.position() - startOfBlock));
+                        long remainderPosition = dbtChannel.position() + remainderLength;
                         buf.clear();
                         buf.limit(Math.min(buf.capacity(), remainderLength));
                         while (buf.hasRemaining()) {
@@ -1259,8 +1259,8 @@ public class DBF {
                         }
                         while (dbtChannel.position() < remainderPosition) {
                             buf.position(0);
-                            buf.limit(Math.min(remainderPosition
-                                    - (int) dbtChannel.position(), buf.capacity()));
+                            buf.limit((int) Math.min(remainderPosition
+                                    - dbtChannel.position(), buf.capacity()));
                             do {
                                 dbtChannel.write(buf);
                             } while (buf.hasRemaining());
@@ -1292,11 +1292,11 @@ public class DBF {
                     fieldBuffer.put(valueBytes, 0, Math.min(valueBytes.length, f.getFieldLength()));
                     fieldBuffer.position(0);
                     channel.position(structure.getHeaderLength() + fieldSkipLength
-                            + (recordNumber - 1) * structure.getRecordLength());
+                            + (long) (recordNumber - 1) * structure.getRecordLength());
                     FileLock lock = null;
                     if (isFileLockingEnabled()) {
                         lock = channel.lock(structure.getHeaderLength() + fieldSkipLength
-                                + (recordNumber - 1) * structure.getRecordLength(), f.getFieldLength(), false);
+                                + (long) (recordNumber - 1) * structure.getRecordLength(), (long) f.getFieldLength(), false);
                     }
                     try {
                         while (fieldBuffer.hasRemaining()) {
@@ -1553,7 +1553,7 @@ public class DBF {
                 if (isThreadSafetyEnabled() || isFileLockingEnabled()) {
                     readStructure();
                 }
-                channel.position(structure.getHeaderLength() + (recordNumber - 1) * structure.getRecordLength());
+                channel.position(structure.getHeaderLength() + (long) (recordNumber - 1) * structure.getRecordLength());
                 while (buf.hasRemaining()) {
                     channel.write(buf);
                 }
@@ -1657,11 +1657,11 @@ public class DBF {
 
                 // Lock and write the new record
                 channel.position(structure.getHeaderLength()
-                        + structure.getRecordLength() * structure.getNumberOfRecords());
+                        + structure.getRecordLength() * (long) structure.getNumberOfRecords());
                 if (isFileLockingEnabled()) {
                     lock2 = channel.lock(structure.getHeaderLength()
-                            + structure.getRecordLength() * structure.getNumberOfRecords(),
-                            structure.getRecordLength() + 1, false); // New record plus EOF mark
+                            + structure.getRecordLength() * (long) structure.getNumberOfRecords(),
+                            (long) structure.getRecordLength() + 1, false); // New record plus EOF mark
                 }
                 buf.position(0);
                 buf.limit(1);
