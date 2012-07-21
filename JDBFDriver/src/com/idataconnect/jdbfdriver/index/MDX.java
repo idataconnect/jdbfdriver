@@ -47,6 +47,8 @@ import java.util.logging.Logger;
  * MDX multiple index implementation.
  */
 public class MDX {
+    
+    public static final int BASE_BLOCK_SIZE = 512;
 
     private final ReentrantLock threadLock;
     private final File mdxFile;
@@ -215,9 +217,9 @@ public class MDX {
             }
 
             // Tag header
-            channel.position(tags[tagIndex].headerPage * 512);
+            channel.position(tags[tagIndex].headerPage * BASE_BLOCK_SIZE);
             buf.position(0);
-            buf.limit(512);
+            buf.limit(BASE_BLOCK_SIZE);
             while (buf.hasRemaining()) {
                 if (channel.read(buf) == -1) {
                     throw new IOException("EOF while reading tag headers");
@@ -257,6 +259,11 @@ public class MDX {
      */
     public void gotoBlock(int block) throws IOException {
         if (blockNumber != block) {
+            if (block > numberOfBlocks) {
+                throw new IllegalArgumentException("Block does not exist: " + block);
+            } else if (block <= 0) {
+                throw new IllegalArgumentException("Invalid block number: " + block);
+            }
             blockNumber = block;
             readBlock();
         }
@@ -304,6 +311,7 @@ public class MDX {
      * @return the next block number, or <em>0</em> if the given key is a leaf
      */
     private int nextBlock(int key, Tag tag) {
+        System.out.println("Next block: " + 4 + key * keyRecordSize(tag));
         return buf.getInt(4 + key * keyRecordSize(tag));
     }
 
@@ -317,6 +325,7 @@ public class MDX {
      * @return the record number, or <em>0</em> if the given key is not a leaf
      */
     private int recordNumber(int key, Tag tag) {
+        System.out.println("Record #: " + buf.getInt(8 + key * keyRecordSize(tag)));
         return buf.getInt(8 + key * keyRecordSize(tag));
     }
 
@@ -354,7 +363,9 @@ public class MDX {
                     while (sb.length() < tag.keyLength) {
                         sb.append(' ');
                     }
-                    compareResult = sb.toString().compareTo(new String(bytes, 0, j));
+                    System.out.printf("Compare string: [%s]\n", new String(bytes, 0, j));
+                    compareResult = new String(bytes, 0, j).compareTo(sb.toString());
+                    System.out.println("Compare result for " + sb + ": " + compareResult);
                     break;
                 case NUMERIC:
                     break;
@@ -386,9 +397,11 @@ public class MDX {
         FileChannel channel = randomAccessFile.getChannel();
         buf.position(0);
         buf.limit(blockSize);
-        channel.position(512 * blockNumber);
+        channel.position(BASE_BLOCK_SIZE * (long) blockNumber);
         while (buf.hasRemaining()) {
-            channel.read(buf);
+            if (channel.read(buf) == -1) {
+                throw new IOException("EOF while reading block " + blockNumber);
+            }
         }
     }
 

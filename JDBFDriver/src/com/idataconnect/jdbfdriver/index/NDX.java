@@ -145,7 +145,7 @@ public class NDX {
         FileChannel channel = randomAccessFile.getChannel();
         buf.position(0);
         buf.limit(BLOCK_SIZE);
-        channel.position(BLOCK_SIZE * blockNumber);
+        channel.position(BLOCK_SIZE * (long) blockNumber);
         while (buf.hasRemaining()) {
             channel.read(buf);
         }
