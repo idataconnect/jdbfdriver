@@ -48,7 +48,7 @@ import java.util.logging.Logger;
  */
 public class MDX {
     
-    public static final int BASE_BLOCK_SIZE = 512;
+    public static final int BLOCK_SIZE = 512;
 
     private final ReentrantLock threadLock;
     private final File mdxFile;
@@ -217,9 +217,9 @@ public class MDX {
             }
 
             // Tag header
-            channel.position(tags[tagIndex].headerPage * BASE_BLOCK_SIZE);
+            channel.position(tags[tagIndex].headerPage * BLOCK_SIZE);
             buf.position(0);
-            buf.limit(BASE_BLOCK_SIZE);
+            buf.limit(BLOCK_SIZE);
             while (buf.hasRemaining()) {
                 if (channel.read(buf) == -1) {
                     throw new IOException("EOF while reading tag headers");
@@ -299,6 +299,10 @@ public class MDX {
 
     private static int keyRecordSize(Tag tag) {
         return (int) Math.ceil(tag.keyLength / 4f) * 4 + 8;
+    }
+
+    private int previousPage(Tag tag) {
+        return buf.getInt(4);
     }
 
     /**
@@ -397,7 +401,7 @@ public class MDX {
         FileChannel channel = randomAccessFile.getChannel();
         buf.position(0);
         buf.limit(blockSize);
-        channel.position(BASE_BLOCK_SIZE * (long) blockNumber);
+        channel.position(BLOCK_SIZE * (long) blockNumber);
         while (buf.hasRemaining()) {
             if (channel.read(buf) == -1) {
                 throw new IOException("EOF while reading block " + blockNumber);

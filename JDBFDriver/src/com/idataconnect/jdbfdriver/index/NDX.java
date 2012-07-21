@@ -45,23 +45,23 @@ import java.util.concurrent.locks.ReentrantLock;
  */
 public class NDX {
     
-    public static final int BLOCK_SIZE = 512;
+    public static final int PAGE_SIZE = 512;
 
     private final ReentrantLock threadLock;
-    private final ByteBuffer buf = ByteBuffer.allocate(BLOCK_SIZE)
+    private final ByteBuffer buf = ByteBuffer.allocate(PAGE_SIZE)
                                              .order(ByteOrder.LITTLE_ENDIAN);
 
     private File ndxFile;
     private RandomAccessFile randomAccessFile;
-    private int startBlock;
-    private int totalBlocks;
+    private int startPage;
+    private int totalPages;
     private int keyLength;
-    private int keysPerBlock;
+    private int keysPerPage;
     private IndexDataType dataType;
     private boolean unique;
     private String key;
     
-    private int blockNumber;
+    private int pageNumber;
 
     private NDX(File ndxFile, RandomAccessFile randomAccessFile, ReentrantLock threadLock) {
         this.ndxFile = ndxFile;
@@ -86,17 +86,17 @@ public class NDX {
         FileChannel channel = randomAccessFile.getChannel();
         channel.position(0);
         buf.position(0);
-        buf.limit(BLOCK_SIZE);
+        buf.limit(PAGE_SIZE);
         while (buf.hasRemaining()) {
             channel.read(buf);
         }
 
         buf.position(0);
-        startBlock = buf.getInt();
-        totalBlocks = buf.getInt();
+        startPage = buf.getInt();
+        totalPages = buf.getInt();
         buf.position(buf.position() + 4); // Skip reserved
         keyLength = buf.getShort() & 0xffff;
-        keysPerBlock = buf.getShort() & 0xffff;
+        keysPerPage = buf.getShort() & 0xffff;
         dataType = IndexDataType.valueOf(buf.getShort() & 0xffff);
         int keyRecordSize = buf.getShort() & 0xffff;
         assert(keyRecordSize() == keyRecordSize)
@@ -120,32 +120,32 @@ public class NDX {
     }
 
     /**
-     * Moves to the given block number and reads the block. Block numbers start
-     * at index <em>1</em>.
+     * Moves to the given b+ tree page number and reads the page into a buffer.
+     * Page numbers start at index <em>1</em>.
      *
-     * @param block the block number to move to
+     * @param pageNumber the page number to move to
      * @throws IOException if an I/O error occurs
      */
-    public void gotoBlock(int block) throws IOException {
-        if (blockNumber != block) {
-            blockNumber = block;
-            readBlock();
+    public void gotoPage(int pageNumber) throws IOException {
+        if (this.pageNumber != pageNumber) {
+            this.pageNumber = pageNumber;
+            readPage();
         }
     }
 
     /**
-     * Re-reads the current block.
+     * Re-reads the current page.
      *
      * @throws IOException if an I/O error occurs
      */
-    public void readBlock() throws IOException {
-        if (blockNumber <= 0) {
-            throw new IllegalStateException("Invalid block number: " + blockNumber);
+    public void readPage() throws IOException {
+        if (pageNumber <= 0) {
+            throw new IllegalStateException("Invalid page number: " + pageNumber);
         }
         FileChannel channel = randomAccessFile.getChannel();
         buf.position(0);
-        buf.limit(BLOCK_SIZE);
-        channel.position(BLOCK_SIZE * (long) blockNumber);
+        buf.limit(PAGE_SIZE);
+        channel.position(PAGE_SIZE * (long) pageNumber);
         while (buf.hasRemaining()) {
             channel.read(buf);
         }
@@ -162,17 +162,17 @@ public class NDX {
      * @throws IOException if an I/O error occurs
      */
     public int find(Object value) throws IOException {
-        return find(value, startBlock);
+        return find(value, startPage);
     }
 
-    private int find(Object value, int blockNumber) throws IOException {
-        gotoBlock(blockNumber);
-        final int keysInBlock = keysInBlock();
+    private int find(Object value, int pageNumber) throws IOException {
+        gotoPage(pageNumber);
+        final int keysInPage = keysInPage();
 
-        int nextBlock, recordNumber;
+        int nextPage, recordNumber;
         int compareResult = 0;
-        for (int i = 0; i < keysInBlock; i++) {
-            nextBlock = nextBlock(i);
+        for (int i = 0; i < keysInPage; i++) {
+            nextPage = nextPage(i);
             recordNumber = recordNumber(i);
             switch (dataType) {
                 default:
@@ -204,12 +204,12 @@ public class NDX {
             }
 
             if (compareResult >= 0) {
-                if (nextBlock == 0) {
+                if (nextPage == 0) {
                     // Leaf
                     return recordNumber;
                 } else {
                     // Branch
-                    return find(value, nextBlock);
+                    return find(value, nextPage);
                 }
             }
         }
@@ -218,32 +218,32 @@ public class NDX {
     }
 
     /**
-     * Fetches the next block pointer for the given key which exists in
-     * <code>buf</code> after a call to {@link #readBlock}. This is only
+     * Fetches the next page pointer for the given key which exists in
+     * <code>buf</code> after a call to {@link #readPage}. This is only
      * applicable for keys which are not leaves. For leaf keys,
      * {@link #recordNumber} should be used instead, in order to fetch the
      * record number.
-     * @param key the zero based key within the block
-     * @return the next block number, or <em>0</em> if the given key is a leaf
+     * @param key the zero based key within the page
+     * @return the next page number, or <em>0</em> if the given key is a leaf
      */
-    private int nextBlock(int key) {
+    private int nextPage(int key) {
         return buf.getInt(4 + key * keyRecordSize());
     }
 
     /**
      * Fetches the record number for the given key which exists in
-     * <code>buf</code> after a call to {@link readBlock}. This is only
+     * <code>buf</code> after a call to {@link readPage}. This is only
      * applicable for keys which are leaves. For non-leave keys,
-     * {@link #nextBlock} should be used instead, in order to fetch the
-     * next block number which is used to continue the search.
-     * @param key the zero based key within the block
+     * {@link #nextPage} should be used instead, in order to fetch the
+     * next page number which is used to continue the search.
+     * @param key the zero based key within the page
      * @return the record number, or <em>0</em> if the given key is not a leaf
      */
     private int recordNumber(int key) {
         return buf.getInt(8 + key * keyRecordSize());
     }
 
-    private int keysInBlock() {
+    private int keysInPage() {
         return buf.getInt(0);
     }
 
@@ -270,11 +270,11 @@ public class NDX {
     public void printStructure(PrintStream out) {
         out.println("----------------------------------");
         
-        out.printf("Start Block:    %18d\n", startBlock);
-        out.printf("Total Blocks:   %18d\n", totalBlocks);
+        out.printf("Start Page:     %18d\n", startPage);
+        out.printf("Total Pages:    %18d\n", totalPages);
         out.printf("Key Length:     %18d\n", keyLength);
         out.printf("Key Record Size:%18d\n", keyRecordSize());
-        out.printf("Keys Per Block: %18d\n", keysPerBlock);
+        out.printf("Keys Per Page:  %18d\n", keysPerPage);
         out.printf("Data Type:      %18s\n", dataType.name());
         out.printf("Unique:         %18b\n", unique);
         out.printf("Key: %29s\n", key);
