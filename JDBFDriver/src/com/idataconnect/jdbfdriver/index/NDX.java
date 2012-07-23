@@ -45,7 +45,7 @@ import java.util.concurrent.locks.ReentrantLock;
  */
 public class NDX {
     
-    public static final int PAGE_SIZE = 512;
+    public static final int PAGE_SIZE = 512; // Same as block size for NDX
 
     private final ReentrantLock threadLock;
     private final ByteBuffer buf = ByteBuffer.allocate(PAGE_SIZE)
@@ -62,6 +62,7 @@ public class NDX {
     private String key;
     
     private int pageNumber;
+    private int keyIndex;
 
     private NDX(File ndxFile, RandomAccessFile randomAccessFile, ReentrantLock threadLock) {
         this.ndxFile = ndxFile;
@@ -195,7 +196,7 @@ public class NDX {
                     while (sb.length() < keyLength) {
                         sb.append(' ');
                     }
-                    compareResult = sb.toString().compareTo(new String(bytes, 0, j));
+                    compareResult = new String(bytes, 0, j).compareTo(sb.toString());
                     break;
                 case NUMERIC:
                     break;

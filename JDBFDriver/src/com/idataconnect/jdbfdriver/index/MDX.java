@@ -56,20 +56,20 @@ public class MDX {
     private final ByteBuffer buf;
 
     private String dbfName;
-    private int blockSize;
+    private int pageSize;
     private int blockSizeMultiplier;
     private DBFDate reindexDate;
     private boolean production;
-    private int entriesInTag;
+    private int keysInTag;
     private int tagLength;
     private int tagsInUse;
-    private int numberOfBlocks;
-    private int firstFreeBlock;
-    private int availableBlock;
+    private int numberOfPages;
+    private int firstFreePage;
+    private int availablePage;
     private DBFDate lastUpdateDate;
     private Tag[] tags;
 
-    private int blockNumber;
+    private int pageNumber;
 
     private MDX(File mdxFile, RandomAccessFile randomAccessFile, ReentrantLock threadLock) {
         this.mdxFile = mdxFile;
@@ -77,7 +77,11 @@ public class MDX {
         this.threadLock = threadLock;
         this.buf = ByteBuffer.allocate(2048).order(ByteOrder.LITTLE_ENDIAN);
     }
-    
+
+    /**
+     * A tag within an MDX file, representing one of possibly many indexes
+     * contained within the MDX.
+     */
     private class Tag {
 
         private int headerPage;
@@ -88,12 +92,237 @@ public class MDX {
         private int backwardTag;
         private boolean unique;
         private boolean descending;
-        private int rootBlock;
+        private int rootPage;
         private int sizeInPages;
         private int keyLength;
-        private int keysPerBlock;
+        private int keysPerPage;
         private int secondaryKeyType;
         private int keyItemLength;
+
+        /**
+         * Getter for the header page.
+         * @return the header page
+         */
+        private int getHeaderPage() {
+            return headerPage;
+        }
+
+        /**
+         * Setter for the header page
+         * @param headerPage the header page to set
+         */
+        private void setHeaderPage(int headerPage) {
+            this.headerPage = headerPage;
+        }
+
+        /**
+         * Gets the user-defined name of the tag.
+         * @return the name of the tag
+         */
+        private String getName() {
+            return name;
+        }
+
+        /**
+         * Sets the user-defined name of the tag.
+         * @param name the name of the tag to set
+         */
+        private void setName(String name) {
+            this.name = name;
+        }
+
+        /**
+         * Gets the data type that this tag indexes. Possible types for MDX
+         * tags are <em>character</em>, <em>numeric</em>, and <em>date</em>.
+         * @return the data type of the tag
+         */
+        private IndexDataType getDataType() {
+            return dataType;
+        }
+
+        /**
+         * Sets the data type that this tag indexes. Possible types for MDX
+         * tags are <em>character</em>, <em>numeric</em>, and <em>date</em>.
+         * @param dataType the data type to set
+         */
+        private void setDataType(IndexDataType dataType) {
+            this.dataType = dataType;
+        }
+
+        /**
+         * @return the leftTag
+         */
+        private int getLeftTag() {
+            return leftTag;
+        }
+
+        /**
+         * @param leftTag the leftTag to set
+         */
+        private void setLeftTag(int leftTag) {
+            this.leftTag = leftTag;
+        }
+
+        /**
+         * @return the rightTag
+         */
+        private int getRightTag() {
+            return rightTag;
+        }
+
+        /**
+         * @param rightTag the rightTag to set
+         */
+        private void setRightTag(int rightTag) {
+            this.rightTag = rightTag;
+        }
+
+        /**
+         * @return the backwardTag
+         */
+        private int getBackwardTag() {
+            return backwardTag;
+        }
+
+        /**
+         * @param backwardTag the backwardTag to set
+         */
+        private void setBackwardTag(int backwardTag) {
+            this.backwardTag = backwardTag;
+        }
+
+        /**
+         * Gets whether this tag indexes unique values only once.
+         * @return the unique flag
+         */
+        private boolean isUnique() {
+            return unique;
+        }
+
+        /**
+         * Sets whether this tag indexes unique values only once.
+         * @param unique the unique flag to set
+         */
+        private void setUnique(boolean unique) {
+            this.unique = unique;
+        }
+
+        /**
+         * Gets whether this tag indexes data in descending order.
+         * @return the descending flag
+         */
+        private boolean isDescending() {
+            return descending;
+        }
+
+        /**
+         * Sets whether this tag indexes data in descending order.
+         * @param descending the descending flag to set
+         */
+        private void setDescending(boolean descending) {
+            this.descending = descending;
+        }
+
+        /**
+         * Gets the block in the tag where the root page begins.
+         * @return the root block
+         */
+        private int getRootBlock() {
+            return rootPage;
+        }
+
+        /**
+         * Sets the block in the tag where the root page begins.
+         * @param rootBlock the root block to set
+         */
+        private void setRootBlock(int rootBlock) {
+            this.rootPage = rootBlock;
+        }
+
+        /**
+         * Gets the number of pages that this tag is using.
+         * @return the size in pages
+         */
+        private int getSizeInPages() {
+            return sizeInPages;
+        }
+
+        /**
+         * Sets the number of pages that this tag is using.
+         * @param sizeInPages the size in pages to set
+         */
+        private void setSizeInPages(int sizeInPages) {
+            this.sizeInPages = sizeInPages;
+        }
+
+        /**
+         * Gets the key length in bytes for this tag. For dates, this length is
+         * <em>8</em>, while for numeric types, this length is <em>12</em>.
+         * @return the key length
+         */
+        private int getKeyLength() {
+            return keyLength;
+        }
+
+        /**
+         * Sets the key length in bytes for this tag. For dates, this kength
+         * should be set to <em>8</em>, while for numeric types, this length
+         * should be set to <em>12</em>.
+         * @param keyLength the key length to set
+         */
+        private void setKeyLength(int keyLength) {
+            this.keyLength = keyLength;
+        }
+
+        /**
+         * Gets the maximum number of keys which can exist in one page. This is
+         * inversely proportional to the key length.
+         * @return the maximum number of keys per page
+         */
+        private int getKeysPerPage() {
+            return keysPerPage;
+        }
+
+        /**
+         * Sets the maximum number of keys which can exist in one page. This is
+         * inversely proportional to the key length.
+         * @param keysPerPage the maximum number of keys per page to set
+         */
+        private void setKeysPerPage(int keysPerPage) {
+            this.keysPerPage = keysPerPage;
+        }
+
+        /**
+         * Gets the secondary key type.
+         * @return the secondary key type
+         */
+        private int getSecondaryKeyType() {
+            return secondaryKeyType;
+        }
+
+        /**
+         * Sets the secondary key type.
+         * @param secondaryKeyType the secondary key type to set
+         */
+        private void setSecondaryKeyType(int secondaryKeyType) {
+            this.secondaryKeyType = secondaryKeyType;
+        }
+
+        /**
+         * Gets the key item length.
+         * @return the key item length
+         */
+        private int getKeyItemLength() {
+            return keyItemLength;
+        }
+
+        /**
+         * Sets the key item length.
+         * @param keyItemLength the key item length to set
+         */
+        private void setKeyItemLength(int keyItemLength) {
+            this.keyItemLength = keyItemLength;
+        }
     }
     
     public static MDX open(File mdxFile) throws IOException {
@@ -144,11 +373,11 @@ public class MDX {
         dbfName = new String(stringBytes, 0, i);
         buf.position(20);
         blockSizeMultiplier = buf.getShort() & 0xffff;
-        blockSize = buf.getShort() & 0xffff;
+        pageSize = buf.getShort() & 0xffff;
         production = buf.get() != 0;
-        entriesInTag = buf.get() & 0xff;
-        if (entriesInTag > 48 || entriesInTag < 1) {
-            throw new IOException("Invalid MDX header. Entries in tag=" + entriesInTag);
+        keysInTag = buf.get() & 0xff;
+        if (keysInTag > 48 || keysInTag < 1) {
+            throw new IOException("Invalid MDX header. Entries in tag=" + keysInTag);
         }
         tagLength = buf.get() & 0xff;
         if (tagLength > 32 || tagLength < 1) {
@@ -157,9 +386,9 @@ public class MDX {
         buf.position(buf.position() + 1);
         tagsInUse = buf.getShort() & 0xffff;
         buf.position(buf.position() + 2);
-        numberOfBlocks = (int) (buf.getInt() & 0xffffffffL);
-        firstFreeBlock = (int) (buf.getInt() & 0xffffffffL);
-        availableBlock = (int) (buf.getInt() & 0xffffffffL);
+        numberOfPages = (int) (buf.getInt() & 0xffffffffL);
+        firstFreePage = (int) (buf.getInt() & 0xffffffffL);
+        availablePage = (int) (buf.getInt() & 0xffffffffL);
         y = (buf.get() & 0xff) + 2000;
         m = buf.get() & 0xff;
         d = buf.get() & 0xff;
@@ -180,7 +409,7 @@ public class MDX {
                 }
             }
             buf.position(0);
-            tags[tagIndex].headerPage = (int) (buf.getInt() & 0xffffffffL);
+            tags[tagIndex].setHeaderPage((int) (buf.getInt() & 0xffffffffL));
             for (i = 0; i < 10; i++) {
                 b = buf.get();
                 if (b == 0) {
@@ -189,35 +418,35 @@ public class MDX {
 
                 stringBytes[i] = b;
             }
-            tags[tagIndex].name = new String(stringBytes, 0, i);
+            tags[tagIndex].setName(new String(stringBytes, 0, i));
             if (i < 10) {
                 buf.position(buf.position() + 10 - i);
             }
 
             keyFormat = buf.get();
-            tags[tagIndex].descending = (keyFormat & 0x08) == 0x08;
-            tags[tagIndex].unique = (keyFormat & 0x40) == 0x40;
-            tags[tagIndex].leftTag = buf.get() & 0xff;
-            tags[tagIndex].rightTag = buf.get() & 0xff;
-            tags[tagIndex].backwardTag = buf.get() & 0xff;
+            tags[tagIndex].setDescending((keyFormat & 0x08) == 0x08);
+            tags[tagIndex].setUnique((keyFormat & 0x40) == 0x40);
+            tags[tagIndex].setLeftTag(buf.get() & 0xff);
+            tags[tagIndex].setRightTag(buf.get() & 0xff);
+            tags[tagIndex].setBackwardTag(buf.get() & 0xff);
             buf.position(buf.position() + 1);
             keyType = buf.get();
             switch (keyType) {
                 case 'C':
-                    tags[tagIndex].dataType = IndexDataType.CHARACTER;
+                    tags[tagIndex].setDataType(IndexDataType.CHARACTER);
                     break;
                 case 'N':
-                    tags[tagIndex].dataType = IndexDataType.NUMERIC;
+                    tags[tagIndex].setDataType(IndexDataType.NUMERIC);
                     break;
                 case 'D':
-                    tags[tagIndex].dataType = IndexDataType.CHARACTER;
+                    tags[tagIndex].setDataType(IndexDataType.CHARACTER);
                     break;
                 default:
                     throw new IOException("Unknown key type: " + (char) keyType);
             }
 
             // Tag header
-            channel.position(tags[tagIndex].headerPage * BLOCK_SIZE);
+            channel.position(tags[tagIndex].getHeaderPage() * BLOCK_SIZE);
             buf.position(0);
             buf.limit(BLOCK_SIZE);
             while (buf.hasRemaining()) {
@@ -227,8 +456,8 @@ public class MDX {
             }
             buf.position(0);
 
-            tags[tagIndex].rootBlock = (int) (buf.getInt() & 0xffffffffL);
-            tags[tagIndex].sizeInPages = (int) (buf.getInt() & 0xffffffffL);
+            tags[tagIndex].setRootBlock((int) (buf.getInt() & 0xffffffffL));
+            tags[tagIndex].setSizeInPages((int) (buf.getInt() & 0xffffffffL));
             keyFormatInHeader = buf.get();
             if (keyFormatInHeader != keyFormat) {
                 throw new IOException("Key format byte in header != key format byte in tag descriptor: " + keyFormat + " != " + keyFormatInHeader);
@@ -239,38 +468,42 @@ public class MDX {
             }
 
             buf.position(buf.position() + 2);
-            tags[tagIndex].keyLength = buf.getShort() & 0xffff;
-            tags[tagIndex].keysPerBlock = buf.getShort() & 0xffff;
-            tags[tagIndex].secondaryKeyType = buf.getShort() & 0xffff;
-            tags[tagIndex].keyItemLength = buf.getShort() & 0xffff;
+            tags[tagIndex].setKeyLength(buf.getShort() & 0xffff);
+            tags[tagIndex].setKeysPerPage(buf.getShort() & 0xffff);
+            tags[tagIndex].setSecondaryKeyType(buf.getShort() & 0xffff);
+            tags[tagIndex].setKeyItemLength(buf.getShort() & 0xffff);
             buf.position(buf.position() + 3);
-            if ((buf.get() != 0) != tags[tagIndex].unique) {
+            if ((buf.get() != 0) != tags[tagIndex].isUnique()) {
                 throw new IOException("Unique flag in header != unique flag in tag descriptor: Key Format=" + keyFormat);
             }
         }
     }
 
     /**
-     * Moves to the given block number and reads the block. Block numbers start
-     * at index <em>1</em>.
+     * Moves to the given page number and reads the page into a memory buffer.
+     * Page numbers start at index <em>1</em>.
      *
-     * @param block the block number to move to
+     * @param pageNumber the block number to move to
      * @throws IOException if an I/O error occurs
      */
-    public void gotoBlock(int block) throws IOException {
-        if (blockNumber != block) {
-            if (block > numberOfBlocks) {
-                throw new IllegalArgumentException("Block does not exist: " + block);
-            } else if (block <= 0) {
-                throw new IllegalArgumentException("Invalid block number: " + block);
+    public void gotoPage(int pageNumber) throws IOException {
+        if (this.pageNumber != pageNumber) {
+            if (pageNumber > numberOfPages) {
+                throw new IllegalArgumentException("Page does not exist: " + pageNumber);
+            } else if (pageNumber <= 0) {
+                throw new IllegalArgumentException("Invalid page number: " + pageNumber);
             }
-            blockNumber = block;
-            readBlock();
+            this.pageNumber = pageNumber;
+            readPage();
         }
     }
 
-    private int keysInBlock() {
+    private int keysInPage() {
         return buf.getInt(0);
+    }
+
+    private int previousPage() {
+        return buf.getInt(4);
     }
 
     /**
@@ -288,8 +521,8 @@ public class MDX {
     public int find(String tagName, Object value) throws IOException {
         // Find the start block for the given tag
         for (Tag tag : tags) {
-            if (tag.name.equalsIgnoreCase(tagName)) {
-                return find(value, tag, tag.rootBlock);
+            if (tag.getName().equalsIgnoreCase(tagName)) {
+                return find(value, tag, tag.getRootBlock());
             }
         }
 
@@ -298,16 +531,12 @@ public class MDX {
     }
 
     private static int keyRecordSize(Tag tag) {
-        return (int) Math.ceil(tag.keyLength / 4f) * 4 + 8;
-    }
-
-    private int previousPage(Tag tag) {
-        return buf.getInt(4);
+        return (int) Math.ceil(tag.getKeyLength() / 4f) * 4 + 8;
     }
 
     /**
      * Fetches the next block pointer for the given key which exists in
-     * <code>buf</code> after a call to {@link #readBlock}. This is only
+     * <code>buf</code> after a call to {@link #readPage}. This is only
      * applicable for keys which are not leaves. For leaf keys,
      * {@link #recordNumber} should be used instead, in order to fetch the
      * record number.
@@ -319,30 +548,18 @@ public class MDX {
         return buf.getInt(4 + key * keyRecordSize(tag));
     }
 
-    /**
-     * Fetches the record number for the given key which exists in
-     * <code>buf</code> after a call to {@link readBlock}. This is only
-     * applicable for keys which are leaves. For non-leave keys,
-     * {@link #nextBlock} should be used instead, in order to fetch the
-     * next block number which is used to continue the search.
-     * @param key the zero based key within the block
-     * @return the record number, or <em>0</em> if the given key is not a leaf
-     */
-    private int recordNumber(int key, Tag tag) {
-        System.out.println("Record #: " + buf.getInt(8 + key * keyRecordSize(tag)));
-        return buf.getInt(8 + key * keyRecordSize(tag));
-    }
-
+    @SuppressWarnings("fallthrough")
     private int find(Object value, Tag tag, int blockNumber) throws IOException {
-        gotoBlock(blockNumber);
-        final int keysInBlock = keysInBlock();
+        gotoPage(blockNumber);
+        final int keysInBlock = keysInPage();
+        final int previousPage = previousPage();
+        final boolean leaf = previousPage == 0;
 
         int nextBlock, recordNumber;
         int compareResult = 0;
         for (int i = 0; i < keysInBlock; i++) {
             nextBlock = nextBlock(i, tag);
-            recordNumber = recordNumber(i, tag);
-            switch (tag.dataType) {
+            switch (tag.getDataType()) {
                 case DATE: {
                     DBFDate date = (DBFDate) value;
                     value = String.valueOf(date.year) + String.valueOf(date.month) + String.valueOf(date.day);
@@ -362,9 +579,9 @@ public class MDX {
                     }
                     // Pad the search key with spaces so that the length is
                     // equal to the NDX key length
-                    StringBuilder sb = new StringBuilder(tag.keyLength);
+                    StringBuilder sb = new StringBuilder(tag.getKeyLength());
                     sb.append(value.toString());
-                    while (sb.length() < tag.keyLength) {
+                    while (sb.length() < tag.getKeyLength()) {
                         sb.append(' ');
                     }
                     System.out.printf("Compare string: [%s]\n", new String(bytes, 0, j));
@@ -376,11 +593,9 @@ public class MDX {
             }
 
             if (compareResult >= 0) {
-                if (nextBlock == 0) {
-                    // Leaf
-                    return recordNumber;
+                if (leaf) {
+                    return nextBlock;
                 } else {
-                    // Branch
                     return find(value, tag, nextBlock);
                 }
             }
@@ -394,17 +609,17 @@ public class MDX {
      *
      * @throws IOException if an I/O error occurs
      */
-    public void readBlock() throws IOException {
-        if (blockNumber <= 0) {
-            throw new IllegalStateException("Invalid block number: " + blockNumber);
+    public void readPage() throws IOException {
+        if (pageNumber <= 0) {
+            throw new IllegalStateException("Invalid block number: " + pageNumber);
         }
         FileChannel channel = randomAccessFile.getChannel();
         buf.position(0);
-        buf.limit(blockSize);
-        channel.position(BLOCK_SIZE * (long) blockNumber);
+        buf.limit(pageSize);
+        channel.position(BLOCK_SIZE * (long) pageNumber);
         while (buf.hasRemaining()) {
             if (channel.read(buf) == -1) {
-                throw new IOException("EOF while reading block " + blockNumber);
+                throw new IOException("EOF while reading block " + pageNumber);
             }
         }
     }
@@ -434,14 +649,14 @@ public class MDX {
         
         out.printf("DBF Name:        %17s\n", dbfName);
         out.printf("Production:      %17b\n", production);
-        out.printf("Block Size:      %17d\n", blockSize);
+        out.printf("Block Size:      %17d\n", pageSize);
         out.printf("Block Size Mult: %17d\n", blockSizeMultiplier);
-        out.printf("Entries In Tag:  %17d\n", entriesInTag);
+        out.printf("Entries In Tag:  %17d\n", keysInTag);
         out.printf("Tag Length:      %17d\n", tagLength);
         out.printf("Tags In Use:     %17d\n", tagsInUse);
-        out.printf("Number Of Blocks:%17d\n", numberOfBlocks);
-        out.printf("First Free Block:%17d\n", firstFreeBlock);
-        out.printf("Available Block: %17d\n", availableBlock);
+        out.printf("Number Of Blocks:%17d\n", numberOfPages);
+        out.printf("First Free Block:%17d\n", firstFreePage);
+        out.printf("Available Block: %17d\n", availablePage);
         out.printf("Last Updated:    %17s\n", lastUpdateDate);
         out.printf("Reindex Date:    %17s\n", reindexDate);
         out.println("Tags:");
@@ -451,19 +666,19 @@ public class MDX {
                 out.println(" ---");
             }
 
-            out.printf(" Name:           %17s\n", tags[i].name);
-            out.printf(" Descending:     %17b\n", tags[i].descending);
-            out.printf(" Unique:         %17b\n", tags[i].unique);
-            out.printf(" Header Page:    %17s\n", tags[i].headerPage);
-            out.printf(" Root Page:      %17s\n", tags[i].rootBlock);
-            out.printf(" Size In Pages   %17s\n", tags[i].sizeInPages);
-            out.printf(" Left Tag:       %17s\n", tags[i].leftTag);
-            out.printf(" Right Tag:      %17s\n", tags[i].rightTag);
-            out.printf(" Backward Tag:   %17s\n", tags[i].backwardTag);
-            out.printf(" Key Length:     %17s\n", tags[i].keyLength);
-            out.printf(" Keys Per Block  %17s\n", tags[i].keysPerBlock);
-            out.printf(" 2nd Key Type:   %17s\n", tags[i].secondaryKeyType);
-            out.printf(" Key Item Length:%17s\n", tags[i].keyItemLength);
+            out.printf(" Name:           %17s\n", tags[i].getName());
+            out.printf(" Descending:     %17b\n", tags[i].isDescending());
+            out.printf(" Unique:         %17b\n", tags[i].isUnique());
+            out.printf(" Header Page:    %17s\n", tags[i].getHeaderPage());
+            out.printf(" Root Page:      %17s\n", tags[i].getRootBlock());
+            out.printf(" Size In Pages   %17s\n", tags[i].getSizeInPages());
+            out.printf(" Left Tag:       %17s\n", tags[i].getLeftTag());
+            out.printf(" Right Tag:      %17s\n", tags[i].getRightTag());
+            out.printf(" Backward Tag:   %17s\n", tags[i].getBackwardTag());
+            out.printf(" Key Length:     %17s\n", tags[i].getKeyLength());
+            out.printf(" Keys Per Block  %17s\n", tags[i].getKeysPerPage());
+            out.printf(" 2nd Key Type:   %17s\n", tags[i].getSecondaryKeyType());
+            out.printf(" Key Item Length:%17s\n", tags[i].getKeyItemLength());
         }
 
         out.println("----------------------------------");
