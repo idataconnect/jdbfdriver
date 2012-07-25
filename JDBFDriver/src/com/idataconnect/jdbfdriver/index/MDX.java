@@ -69,7 +69,7 @@ public class MDX {
     private DBFDate lastUpdateDate;
     private Tag[] tags;
 
-    private int pageNumber;
+    private int blockNumber;
 
     private MDX(File mdxFile, RandomAccessFile randomAccessFile, ReentrantLock threadLock) {
         this.mdxFile = mdxFile;
@@ -480,20 +480,21 @@ public class MDX {
     }
 
     /**
-     * Moves to the given page number and reads the page into a memory buffer.
-     * Page numbers start at index <em>1</em>.
+     * Moves to the given block number and reads the page into a memory buffer.
+     * Block numbers start at index <em>1</em>. Pages start at block boundaries
+     * and will span multiple blocks, based on the page size.
      *
-     * @param pageNumber the block number to move to
+     * @param blockNumber the block number to move to
      * @throws IOException if an I/O error occurs
      */
-    public void gotoPage(int pageNumber) throws IOException {
-        if (this.pageNumber != pageNumber) {
-            if (pageNumber > numberOfPages) {
-                throw new IllegalArgumentException("Page does not exist: " + pageNumber);
-            } else if (pageNumber <= 0) {
-                throw new IllegalArgumentException("Invalid page number: " + pageNumber);
+    public void gotoBlock(int blockNumber) throws IOException {
+        if (this.blockNumber != blockNumber) {
+            if (blockNumber > numberOfPages) {
+                throw new IllegalArgumentException("Block does not exist: " + blockNumber);
+            } else if (blockNumber <= 0) {
+                throw new IllegalArgumentException("Invalid block number: " + blockNumber);
             }
-            this.pageNumber = pageNumber;
+            this.blockNumber = blockNumber;
             readPage();
         }
     }
@@ -531,34 +532,31 @@ public class MDX {
     }
 
     private static int keyRecordSize(Tag tag) {
-        return (int) Math.ceil(tag.getKeyLength() / 4f) * 4 + 8;
+        return (int) Math.ceil(tag.getKeyLength() / 4f) * 4 + 4;
     }
 
     /**
      * Fetches the next block pointer for the given key which exists in
-     * <code>buf</code> after a call to {@link #readPage}. This is only
-     * applicable for keys which are not leaves. For leaf keys,
-     * {@link #recordNumber} should be used instead, in order to fetch the
-     * record number.
+     * <code>buf</code> after a call to {@link #readPage}.
      * @param key the zero based key within the block
      * @return the next block number, or <em>0</em> if the given key is a leaf
      */
-    private int nextBlock(int key, Tag tag) {
-        System.out.println("Next block: " + 4 + key * keyRecordSize(tag));
-        return buf.getInt(4 + key * keyRecordSize(tag));
+    private int nextBlockOrRecordNumber(int key, Tag tag) {
+        System.out.println("Next block or record number: " + buf.getInt(8 + key * keyRecordSize(tag)));
+        return buf.getInt(8 + key * keyRecordSize(tag));
     }
 
     @SuppressWarnings("fallthrough")
     private int find(Object value, Tag tag, int blockNumber) throws IOException {
-        gotoPage(blockNumber);
+        gotoBlock(blockNumber);
         final int keysInBlock = keysInPage();
         final int previousPage = previousPage();
         final boolean leaf = previousPage == 0;
 
-        int nextBlock, recordNumber;
+        int nextBlockOrRecordNumber;
         int compareResult = 0;
         for (int i = 0; i < keysInBlock; i++) {
-            nextBlock = nextBlock(i, tag);
+            nextBlockOrRecordNumber = nextBlockOrRecordNumber(i, tag);
             switch (tag.getDataType()) {
                 case DATE: {
                     DBFDate date = (DBFDate) value;
@@ -566,7 +564,7 @@ public class MDX {
                 }
                 default:
                 case CHARACTER:
-                    byte[] bytes = new byte[keyRecordSize(tag) - 8];
+                    byte[] bytes = new byte[keyRecordSize(tag) - 4];
                     byte b;
                     int j;
                     for (j = 0; j < bytes.length; j++) {
@@ -594,9 +592,9 @@ public class MDX {
 
             if (compareResult >= 0) {
                 if (leaf) {
-                    return nextBlock;
+                    return nextBlockOrRecordNumber;
                 } else {
-                    return find(value, tag, nextBlock);
+                    return find(value, tag, nextBlockOrRecordNumber);
                 }
             }
         }
@@ -610,16 +608,16 @@ public class MDX {
      * @throws IOException if an I/O error occurs
      */
     public void readPage() throws IOException {
-        if (pageNumber <= 0) {
-            throw new IllegalStateException("Invalid block number: " + pageNumber);
+        if (blockNumber <= 0) {
+            throw new IllegalStateException("Invalid block number: " + blockNumber);
         }
         FileChannel channel = randomAccessFile.getChannel();
         buf.position(0);
         buf.limit(pageSize);
-        channel.position(BLOCK_SIZE * (long) pageNumber);
+        channel.position(BLOCK_SIZE * (long) blockNumber);
         while (buf.hasRemaining()) {
             if (channel.read(buf) == -1) {
-                throw new IOException("EOF while reading block " + pageNumber);
+                throw new IOException("EOF while reading block " + blockNumber);
             }
         }
     }
