@@ -31,6 +31,7 @@
 package com.idataconnect.jdbfdriver.index;
 
 import com.idataconnect.jdbfdriver.DBF;
+import com.idataconnect.jdbfdriver.DBFDate;
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintStream;
@@ -121,7 +122,8 @@ public class NDX {
     }
 
     /**
-     * Moves to the given b+ tree page number and reads the page into a buffer.
+     * Moves to the given b+ tree page number and reads the page into the
+     * internal buffer.
      * Page numbers start at index <em>1</em>.
      *
      * @param pageNumber the page number to move to
@@ -176,6 +178,10 @@ public class NDX {
             nextPage = nextPage(i);
             recordNumber = recordNumber(i);
             switch (dataType) {
+                case DATE: {
+                    DBFDate date = (DBFDate) value;
+                    value = String.valueOf(date.year) + String.valueOf(date.month) + String.valueOf(date.day);
+                }
                 default:
                 case CHARACTER:
                     byte[] bytes = new byte[keyRecordSize() - 8];
@@ -200,8 +206,6 @@ public class NDX {
                     break;
                 case NUMERIC:
                     break;
-                case DATE:
-                    throw new UnsupportedOperationException("NDX does not support dates. Hint: Convert the date to a string or number first");
             }
 
             if (compareResult >= 0) {
