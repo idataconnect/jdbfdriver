@@ -582,9 +582,7 @@ public class MDX {
                     while (sb.length() < tag.getKeyLength()) {
                         sb.append(' ');
                     }
-                    System.out.printf("Compare string: [%s]\n", new String(bytes, 0, j));
                     compareResult = new String(bytes, 0, j).compareTo(sb.toString());
-                    System.out.println("Compare result for " + sb + ": " + compareResult);
                     break;
                 case NUMERIC:
                     break;
