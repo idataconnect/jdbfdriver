@@ -31,12 +31,24 @@ public class DBFDateTest {
      * Test of fromCalendarDays method, of class DBFDate.
      */
     @Test
-    public void testFromCalendarDays() {
+    public void testJulianDays() {
         System.out.println("fromCalendarDays");
         DBFDate d = DBFDate.getCurrentDate();
         assertEquals(d,
                 DBFDate.fromJulianDay(d.getJulianDay()));
         d = new DBFDate(10, 10, 1950);
+        assertEquals(d,
+                DBFDate.fromJulianDay(d.getJulianDay()));
+        d = new DBFDate(1, 1, 200);
+        assertEquals(d,
+                DBFDate.fromJulianDay(d.getJulianDay()));
+        d = new DBFDate(1, 1, -1000);
+        assertEquals(d,
+                DBFDate.fromJulianDay(d.getJulianDay()));
+        d = new DBFDate(1, 1, 1980);
+        assertEquals(d,
+                DBFDate.fromJulianDay(d.getJulianDay()));
+        d = new DBFDate(1, 1, 2020);
         assertEquals(d,
                 DBFDate.fromJulianDay(d.getJulianDay()));
     }
