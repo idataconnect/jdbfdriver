@@ -36,6 +36,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.io.RandomAccessFile;
+import java.io.Serializable;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
@@ -50,28 +51,28 @@ public class MDX {
     
     public static final int BLOCK_SIZE = 512;
 
-    private final ReentrantLock threadLock;
-    private final File mdxFile;
-    private final RandomAccessFile randomAccessFile;
-    private final ByteBuffer buf;
+    protected final ReentrantLock threadLock;
+    protected final File mdxFile;
+    protected final RandomAccessFile randomAccessFile;
+    protected final ByteBuffer buf;
 
-    private String dbfName;
-    private int pageSize;
-    private int blockSizeMultiplier;
-    private DBFDate reindexDate;
-    private boolean production;
-    private int keysInTag;
-    private int tagLength;
-    private int tagsInUse;
-    private int numberOfPages;
-    private int firstFreePage;
-    private int availablePage;
-    private DBFDate lastUpdateDate;
-    private Tag[] tags;
+    protected String dbfName;
+    protected int pageSize;
+    protected int blockSizeMultiplier;
+    protected DBFDate reindexDate;
+    protected boolean production;
+    protected int keysInTag;
+    protected int tagLength;
+    protected int tagsInUse;
+    protected int numberOfPages;
+    protected int firstFreePage;
+    protected int availablePage;
+    protected DBFDate lastUpdateDate;
+    protected Tag[] tags;
 
-    private int blockNumber;
+    protected int blockNumber;
 
-    private MDX(File mdxFile, RandomAccessFile randomAccessFile, ReentrantLock threadLock) {
+    protected MDX(File mdxFile, RandomAccessFile randomAccessFile, ReentrantLock threadLock) {
         this.mdxFile = mdxFile;
         this.randomAccessFile = randomAccessFile;
         this.threadLock = threadLock;
@@ -82,7 +83,9 @@ public class MDX {
      * A tag within an MDX file, representing one of possibly many indexes
      * contained within the MDX.
      */
-    private class Tag {
+    protected class Tag implements Serializable {
+
+        private static final long serialVersionUID = 1L;
 
         private int headerPage;
         private String name;
@@ -265,7 +268,7 @@ public class MDX {
         }
 
         /**
-         * Sets the key length in bytes for this tag. For dates, this kength
+         * Sets the key length in bytes for this tag. For dates, this length
          * should be set to <em>8</em>, while for numeric types, this length
          * should be set to <em>12</em>.
          * @param keyLength the key length to set
@@ -330,7 +333,8 @@ public class MDX {
     }
     
     public static MDX open(File mdxFile, ReentrantLock threadLock) throws IOException {
-        final RandomAccessFile randomAccessFile = new RandomAccessFile(mdxFile, "rw" + (DBF.isSynchronousWritesEnabled() ? "s" : ""));
+        final RandomAccessFile randomAccessFile = new RandomAccessFile(mdxFile,
+                "rw" + (DBF.isSynchronousWritesEnabled() ? "s" : ""));
         final MDX mdx = new MDX(mdxFile, randomAccessFile, threadLock);
         mdx.readStructure();
         return mdx;
@@ -560,7 +564,7 @@ public class MDX {
             switch (tag.getDataType()) {
                 case DATE: {
                     DBFDate date = (DBFDate) value;
-                    value = String.valueOf(date.year) + String.valueOf(date.month) + String.valueOf(date.day);
+                    value = date.dtos();
                 }
                 default:
                 case CHARACTER:
@@ -576,7 +580,7 @@ public class MDX {
                         }
                     }
                     // Pad the search key with spaces so that the length is
-                    // equal to the NDX key length
+                    // equal to the MDX key length
                     StringBuilder sb = new StringBuilder(tag.getKeyLength());
                     sb.append(value.toString());
                     while (sb.length() < tag.getKeyLength()) {

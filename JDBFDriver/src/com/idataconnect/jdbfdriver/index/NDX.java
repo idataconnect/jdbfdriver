@@ -90,7 +90,9 @@ public class NDX {
         buf.position(0);
         buf.limit(PAGE_SIZE);
         while (buf.hasRemaining()) {
-            channel.read(buf);
+            if (channel.read(buf) == -1) {
+                throw new IOException("EOF encountered while reading NDX structure");
+            }
         }
 
         buf.position(0);

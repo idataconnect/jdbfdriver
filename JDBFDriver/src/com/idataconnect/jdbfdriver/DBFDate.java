@@ -204,6 +204,16 @@ public class DBFDate implements Serializable, Comparable<DBFDate> {
     }
 
     /**
+     * Returns the date in xBase's DTOS() function format. This includes the
+     * year with century, followed by the month, followed by the day of month.
+     *
+     * @return the date in xBase DTOS format
+     */
+    public String dtos() {
+        return String.valueOf(year) + String.valueOf(month) + String.valueOf(day);
+    }
+
+    /**
      * {@inheritDoc}
      * <p>
      * This implementation compares based on the Julian days.
