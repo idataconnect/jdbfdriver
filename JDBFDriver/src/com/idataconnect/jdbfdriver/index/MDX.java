@@ -327,11 +327,29 @@ public class MDX {
             this.keyItemLength = keyItemLength;
         }
     }
-    
+
+    /**
+     * Opens the given MDX file with a new lock. If locking is enabled, and
+     * multiple threads will be accessing this index file, the alternate
+     * constructor {@link #open(File, ReentrantLock)} should be used instead.
+     *
+     * @param mdxFile the file to open
+     * @return a reference to the opened file
+     * @throws IOException if an I/O error occurs
+     */
     public static MDX open(File mdxFile) throws IOException {
         return open(mdxFile, new ReentrantLock());
     }
-    
+
+    /**
+     * Opens the given MDX file with the given thread lock. If locking is enabled,
+     * this allows multiple threads to share the same lock.
+     *
+     * @param mdxFile the file to open
+     * @param threadLock an existing thread lock
+     * @return a reference to the opened file
+     * @throws IOException if an I/O error occurs
+     */
     public static MDX open(File mdxFile, ReentrantLock threadLock) throws IOException {
         final RandomAccessFile randomAccessFile = new RandomAccessFile(mdxFile,
                 "rw" + (DBF.isSynchronousWritesEnabled() ? "s" : ""));
@@ -339,7 +357,16 @@ public class MDX {
         mdx.readStructure();
         return mdx;
     }
-    
+
+    public DBFDate reindexDate() {
+        return reindexDate;
+    }
+
+    /**
+     * Reads the structure of the MDX file and caches it in memory. The tag
+     * structure is read, as
+     * @throws IOException 
+     */
     protected void readStructure() throws IOException {
         FileChannel channel = randomAccessFile.getChannel();
         
@@ -540,10 +567,14 @@ public class MDX {
     }
 
     /**
-     * Fetches the next block pointer for the given key which exists in
-     * <code>buf</code> after a call to {@link #readPage}.
+     * Fetches either the next block pointer or the record number for the given
+     * key which exists in <code>buf</code> after a call to {@link #readPage}.
+     * The next block pointer is returned if the current block is not a leaf, and
+     * the record number is returned if the current block is a leaf.
+     *
      * @param key the zero based key within the block
-     * @return the next block number, or <em>0</em> if the given key is a leaf
+     * @return the next block number, or the record number if the current block
+     * is a leaf
      */
     private int nextBlockOrRecordNumber(int key, Tag tag) {
         System.out.println("Next block or record number: " + buf.getInt(8 + key * keyRecordSize(tag)));

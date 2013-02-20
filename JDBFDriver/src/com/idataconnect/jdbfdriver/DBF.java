@@ -350,9 +350,9 @@ public class DBF {
                 }
                 buf.put(signature);
 
-                buf.put((byte) (structure.getLastUpdated().year - 1900));
-                buf.put(structure.getLastUpdated().month);
-                buf.put(structure.getLastUpdated().day);
+                buf.put((byte) (structure.getLastUpdated().getYear() - 1900));
+                buf.put(structure.getLastUpdated().getMonth());
+                buf.put(structure.getLastUpdated().getDay());
 
                 buf.putInt(structure.getNumberOfRecords());
 

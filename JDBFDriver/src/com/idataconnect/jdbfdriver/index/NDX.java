@@ -182,7 +182,7 @@ public class NDX {
             switch (dataType) {
                 case DATE: {
                     DBFDate date = (DBFDate) value;
-                    value = String.valueOf(date.year) + String.valueOf(date.month) + String.valueOf(date.day);
+                    value = String.valueOf(date.getYear()) + String.valueOf(date.getMonth()) + String.valueOf(date.getDay());
                 }
                 default:
                 case CHARACTER:

@@ -42,7 +42,7 @@ import java.util.GregorianCalendar;
  * which is valid in xBase, and is similar to a null type.
  * @author ben
  */
-public class DBFDate implements Serializable, Comparable<DBFDate> {
+public class DBFDate implements Serializable, Comparable<DBFDate>, Cloneable {
 
     private static final long serialVersionUID = 1L;
 
@@ -50,14 +50,15 @@ public class DBFDate implements Serializable, Comparable<DBFDate> {
      * Day of week names in English. This is simply to avoid having to call
      * the Java localization routines when printing the day names in English.
      */
-    static final String[] EN_DAY_NAMES = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
+    transient static final String[] EN_DAY_NAMES = {"Sunday", "Monday", "Tuesday",
+        "Wednesday", "Thursday", "Friday", "Saturday"};
 
     /** Year portion of the date value. */
-    public short year;
+    private short year = 0;
     /** Month portion of the date value. */
-    public byte month;
+    private byte month = 0;
     /** Day of month portion of the date value. */
-    public byte day;
+    private byte day = 0;
 
     /**
      * Constructs a new date object with a blank initial date.
@@ -77,6 +78,11 @@ public class DBFDate implements Serializable, Comparable<DBFDate> {
         this.year = (short) year;
     }
 
+    @Override
+    public Object clone() throws CloneNotSupportedException {
+        return super.clone();
+    }
+
     /**
      * Gets the current date as a DBF date.
      * @return a DBF date representing the current date
@@ -84,9 +90,9 @@ public class DBFDate implements Serializable, Comparable<DBFDate> {
     public static DBFDate getCurrentDate() {
         DBFDate current = new DBFDate();
         GregorianCalendar cal = new GregorianCalendar();
-        current.month = (byte) (cal.get(Calendar.MONTH) + 1);
-        current.day = (byte) cal.get(Calendar.DAY_OF_MONTH);
-        current.year = (short) cal.get(Calendar.YEAR);
+        current.setMonth((byte) (cal.get(Calendar.MONTH) + 1));
+        current.setDay((byte) cal.get(Calendar.DAY_OF_MONTH));
+        current.setYear((short) cal.get(Calendar.YEAR));
 
         return current;
     }
@@ -95,9 +101,9 @@ public class DBFDate implements Serializable, Comparable<DBFDate> {
      * Makes this date a blank date. In other words, clears the date locally.
      */
     public void clear() {
-        month = 0;
-        day = 0;
-        year = 0;
+        setMonth((byte) 0);
+        setDay((byte) 0);
+        setYear((short) 0);
     }
 
     /**
@@ -105,7 +111,7 @@ public class DBFDate implements Serializable, Comparable<DBFDate> {
      * @return whether the date is blank
      */
     public boolean isBlank() {
-        return day == 0;
+        return getDay() == 0;
     }
 
     /**
@@ -118,9 +124,9 @@ public class DBFDate implements Serializable, Comparable<DBFDate> {
             return -1;
         }
 
-        int y = year;
-        int m = month;
-        final int d = day;
+        int y = getYear();
+        int m = getMonth();
+        final int d = getDay();
         
         if (m <= 2) {
             y--;
@@ -167,12 +173,12 @@ public class DBFDate implements Serializable, Comparable<DBFDate> {
      * is an empty date
      */
     public int getDayOfWeek() {
-        if (day == 0) {
+        if (getDay() == 0) {
             return -1;
         }
 
-        int m = month;
-        int y = year;
+        int m = getMonth();
+        int y = getYear();
         if (m > 2) {
             // Mar-Dec: subtract 2 from month
             m -= 2;
@@ -182,7 +188,7 @@ public class DBFDate implements Serializable, Comparable<DBFDate> {
             y--;
         }
 
-        int dow = (day + (7 + 31 * (m - 1)) / 12 + y + y / 4 - y / 100 + y / 400) % 7;
+        int dow = (getDay() + (7 + 31 * (m - 1)) / 12 + y + y / 4 - y / 100 + y / 400) % 7;
         dow += 2;
         if (dow > 6) {
             dow -= 2;
@@ -210,7 +216,7 @@ public class DBFDate implements Serializable, Comparable<DBFDate> {
      * @return the date in xBase DTOS format
      */
     public String dtos() {
-        return String.valueOf(year) + String.valueOf(month) + String.valueOf(day);
+        return String.valueOf(getYear()) + String.valueOf(getMonth()) + String.valueOf(getDay());
     }
 
     /**
@@ -234,7 +240,7 @@ public class DBFDate implements Serializable, Comparable<DBFDate> {
         if (isBlank()) {
             return "{  /  /    }";
         } else {
-            return "{" + month + "/" + day + "/" + year + "}";
+            return "{" + getMonth() + "/" + getDay() + "/" + getYear() + "}";
         }
     }
 
@@ -265,5 +271,57 @@ public class DBFDate implements Serializable, Comparable<DBFDate> {
     @Override
     public int hashCode() {
         return Integer.valueOf(getJulianDay()).hashCode();
+    }
+
+    /**
+     * Gets the four digit year portion of the date, for example: 2000.
+     *
+     * @return the year
+     */
+    public short getYear() {
+        return year;
+    }
+
+    /**
+     * Sets the four digit year portion of the date, for example: 2000.
+     *
+     * @param year the year to set
+     */
+    public void setYear(short year) {
+        this.year = year;
+    }
+
+    /**
+     * Gets the month of the year, starting at 1.
+     * @return the month
+     */
+    public byte getMonth() {
+        return month;
+    }
+
+    /**
+     * Sets the month of the year, starting at 1.
+     * @param month the month to set
+     */
+    public void setMonth(byte month) {
+        this.month = month;
+    }
+
+    /**
+     * Gets the day of the month, starting at 1.
+     *
+     * @return the day
+     */
+    public byte getDay() {
+        return day;
+    }
+
+    /**
+     * Sets the day of the month, starting at 1.
+     *
+     * @param day the day to set
+     */
+    public void setDay(byte day) {
+        this.day = day;
     }
 }
