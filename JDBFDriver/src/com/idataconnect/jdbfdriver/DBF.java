@@ -47,12 +47,12 @@ import java.util.logging.Logger;
 
 /**
  * <p>The main class for DBF interaction.</p>
- * <p>Example usage:<br/>
+ * <p>Example usage:<br>
 <code>
-DBF dbf = DBF.use("test.dbf");<br/>
-dbf.appendBlank();<br/>
-dbf.replace("TEST", "Testing");<br/>
-dbf.close();<br/>
+DBF dbf = DBF.use("test.dbf");<br>
+dbf.appendBlank();<br>
+dbf.replace("TEST", "Testing");<br>
+dbf.close();<br>
 </code>
  * </p>
  * @author ben

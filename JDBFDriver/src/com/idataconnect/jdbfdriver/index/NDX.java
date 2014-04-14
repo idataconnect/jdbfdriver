@@ -42,7 +42,7 @@ import java.nio.channels.FileChannel;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
- * NDX index implementation.
+ * NDX single index implementation.
  */
 public class NDX {
     
@@ -51,9 +51,9 @@ public class NDX {
     private final ReentrantLock threadLock;
     private final ByteBuffer buf = ByteBuffer.allocate(PAGE_SIZE)
                                              .order(ByteOrder.LITTLE_ENDIAN);
+    private final File ndxFile;
+    private final RandomAccessFile randomAccessFile;
 
-    private File ndxFile;
-    private RandomAccessFile randomAccessFile;
     private int startPage;
     private int totalPages;
     private int keyLength;

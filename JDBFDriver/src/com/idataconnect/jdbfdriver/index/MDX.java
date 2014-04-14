@@ -365,7 +365,7 @@ public class MDX {
     /**
      * Reads the structure of the MDX file and caches it in memory. The tag
      * structure is read, as
-     * @throws IOException 
+     * @throws IOException if an I/O error occurs
      */
     protected void readStructure() throws IOException {
         FileChannel channel = randomAccessFile.getChannel();
@@ -577,7 +577,6 @@ public class MDX {
      * is a leaf
      */
     private int nextBlockOrRecordNumber(int key, Tag tag) {
-        System.out.println("Next block or record number: " + buf.getInt(8 + key * keyRecordSize(tag)));
         return buf.getInt(8 + key * keyRecordSize(tag));
     }
 
