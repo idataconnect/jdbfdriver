@@ -152,7 +152,6 @@ public class DBFField {
      * @param fieldLength the length of the field
      * @param decimalLength the length of the decimal portion of the field
      */
-    @SuppressWarnings("fallthrough")
     public DBFField(String fieldName, FieldType fieldType, int fieldLength, int decimalLength) {
         this.fieldName = fieldName.toUpperCase();
         this.fieldType = fieldType;
@@ -174,6 +173,7 @@ public class DBFField {
             case C:
             case M:
                 this.decimalLength = 0;
+            default:
         }
     }
 

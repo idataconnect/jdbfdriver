@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009-2012, i Data Connect!
+ * Copyright (c) 2009-2024, i Data Connect!
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -47,7 +47,7 @@ import java.util.logging.Logger;
 /**
  * MDX multiple index implementation.
  */
-public class MDX {
+public class MDX implements DBFIndex {
     
     public static final int BLOCK_SIZE = 512;
 
@@ -71,6 +71,8 @@ public class MDX {
     protected Tag[] tags;
 
     protected int blockNumber;
+    protected int keyIndex; // key within block
+    protected Tag tag;
 
     protected MDX(File mdxFile, RandomAccessFile randomAccessFile, ReentrantLock threadLock) {
         this.mdxFile = mdxFile;
@@ -80,7 +82,7 @@ public class MDX {
     }
 
     /**
-     * A tag within an MDX file, representing one of possibly many indexes
+     * A tag within an MDX file, representing one of many indexes
      * contained within the MDX.
      */
     protected class Tag implements Serializable {
@@ -363,8 +365,8 @@ public class MDX {
     }
 
     /**
-     * Reads the structure of the MDX file and caches it in memory. The tag
-     * structure is read, as
+     * Reads the structure of the MDX file and caches it in memory. The structure
+     * for each tag is loaded into memory.
      * @throws IOException if an I/O error occurs
      */
     protected void readStructure() throws IOException {
@@ -526,6 +528,7 @@ public class MDX {
                 throw new IllegalArgumentException("Invalid block number: " + blockNumber);
             }
             this.blockNumber = blockNumber;
+            this.keyIndex = 0;
             readPage();
         }
     }
@@ -534,7 +537,7 @@ public class MDX {
         return buf.getInt(0);
     }
 
-    private int previousPage() {
+    private int previousBlock() {
         return buf.getInt(4);
     }
 
@@ -580,12 +583,11 @@ public class MDX {
         return buf.getInt(8 + key * keyRecordSize(tag));
     }
 
-    @SuppressWarnings("fallthrough")
     private int find(Object value, Tag tag, int blockNumber) throws IOException {
         gotoBlock(blockNumber);
         final int keysInBlock = keysInPage();
-        final int previousPage = previousPage();
-        final boolean leaf = previousPage == 0;
+        final int previousBlock = previousBlock();
+        final boolean leaf = previousBlock == 0;
 
         int nextBlockOrRecordNumber;
         int compareResult = 0;
@@ -595,6 +597,7 @@ public class MDX {
                 case DATE: {
                     DBFDate date = (DBFDate) value;
                     value = date.dtos();
+                    // fallthrough
                 }
                 default:
                 case CHARACTER:
@@ -635,7 +638,7 @@ public class MDX {
     }
 
     /**
-     * Re-reads the current block.
+     * Reads the current block into the internal buffer.
      *
      * @throws IOException if an I/O error occurs
      */
@@ -676,7 +679,7 @@ public class MDX {
      */
     public void printStructure(PrintStream out) {
         out.println("----------------------------------");
-        
+
         out.printf("DBF Name:        %17s\n", dbfName);
         out.printf("Production:      %17b\n", production);
         out.printf("Block Size:      %17d\n", pageSize);
@@ -690,7 +693,7 @@ public class MDX {
         out.printf("Last Updated:    %17s\n", lastUpdateDate);
         out.printf("Reindex Date:    %17s\n", reindexDate);
         out.println("Tags:");
-        
+
         for (int i = 0; i < tags.length; i++) {
             if (i != 0) {
                 out.println(" ---");
@@ -712,5 +715,27 @@ public class MDX {
         }
 
         out.println("----------------------------------");
+    }
+
+    @Override
+    public int next() throws IOException {
+        final int keysInBlock = keysInPage();
+        final int previousBlock = previousBlock();
+        final boolean leaf = previousBlock == 0;
+        while (true) {
+            if (this.keyIndex >= keysInBlock - 1) {
+                if (leaf) {
+                    break;
+                }
+                gotoBlock(nextBlockOrRecordNumber(keysInBlock, null));
+            }
+        }
+        return DBF.RECORD_NUMBER_EOF;
+    }
+
+    @Override
+    public int prev() throws IOException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'prev'");
     }
 }

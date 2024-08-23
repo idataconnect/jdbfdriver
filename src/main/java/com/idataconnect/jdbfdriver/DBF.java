@@ -48,14 +48,13 @@ import java.util.logging.Logger;
 /**
  * <p>The main class for DBF interaction.</p>
  * <p>Example usage:<br>
-<code>
-DBF dbf = DBF.use("test.dbf");<br>
-dbf.appendBlank();<br>
-dbf.replace("TEST", "Testing");<br>
-dbf.close();<br>
-</code>
+<pre>{@code
+DBF dbf = DBF.use("test.dbf");
+dbf.appendBlank();
+dbf.replace("TEST", "Testing");
+dbf.close();
+}</pre>
  * </p>
- * @author ben
  */
 public class DBF {
     
@@ -176,42 +175,47 @@ public class DBF {
             }
 
             // Basic structure
-            byte signature = buf.get();
+            byte signature = buf.get(); // 0
 
             // Check creator version
-            int version = signature & 7; // 0b00000111
-            if (version != 3) { // 0b00000011
-                log.log(Level.WARNING, "DBF [%s] has an unsupported signature (version ID %x)",
-                        new Object[] {dbfFile, version});
+            int version = signature & 0b0000_0111;
+            if (version != 0b0000_0011) {
+                log.log(Level.WARNING, String.format("DBF [%s] has an unsupported signature (version ID %x)", dbfFile, version));
             }
 
             // Check DBT flag
-            boolean dbtPaired = (signature & 128) == 128; // 0b10000000
+            boolean dbtPaired = (signature & 0b1000_0000) == 0b1000_0000;
             structure.setDbtPaired(dbtPaired);
 
             // Check memo flag
-            boolean memoExists = (signature & 8) == 8; // 0b00001000
+            boolean memoExists = (signature & 0b0000_1000) == 0b0000_1000;
             structure.setMemoExists(memoExists);
 
-            int lastUpdateYear = (buf.get() & 0xff) + 1900;
-            int lastUpdateMonth = buf.get() & 0xff;
-            int lastUpdateDay = buf.get() & 0xff;
+            int lastUpdateYear = (buf.get() & 0xff) + 1900; // 1
+            int lastUpdateMonth = buf.get() & 0xff; // 2
+            int lastUpdateDay = buf.get() & 0xff; // 3
             structure.setLastUpdated(new DBFDate(lastUpdateMonth, lastUpdateDay, lastUpdateYear));
+            // 4-7
             structure.setNumberOfRecords(buf.getInt()); // Unsigned int, that won't overflow
+            // 8, 9
             structure.setHeaderLength((short)(buf.getShort() & 0xffff)); // Unsigned short
+            // 10, 11
             structure.setRecordLength((short)(buf.getShort() & 0xffff)); // Unsigned short
             if (structure.getRecordLength() == 0) {
                 throw new IOException("Record length is zero");
             }
+            // 12, 13
             buf.position(buf.position() + 2); // Skip reserved
-            structure.setTransactionActive(buf.get() != 0x00);
-            structure.setDataEncrypted(buf.get() != 0x00);
+            structure.setTransactionActive(buf.get() != 0x00); // 15
+            structure.setDataEncrypted(buf.get() != 0x00); // 16
+            // 16-28
             buf.position(buf.position() + 12); // Skip reserved
-            structure.setMdxPaired(buf.get() != 0x00);
+            structure.setMdxPaired(buf.get() != 0x00); // 25
+            // 29, 30, 31
             buf.position(buf.position() + 3); // Skip code page byte and 2 reserved bytes
 
             List<DBFField> fields = new ArrayList<DBFField>(32);
-            // Header structure
+            // Header fields
             do {
                 byte[] headerBytes = new byte[32];
                 for (int count = 0; count < 32; count++) {
@@ -222,7 +226,7 @@ public class DBF {
                         int numRead;
                         while ((numRead = channel.read(buf)) == 0) {}
                         if (numRead == -1) {
-                            throw new IOException("End of file encountered while reading header structure");
+                            throw new IOException("End of file encountered while reading header field");
                         }
 
                         buf.flip();

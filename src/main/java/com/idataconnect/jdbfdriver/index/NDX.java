@@ -39,6 +39,8 @@ import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
@@ -64,11 +66,13 @@ public class NDX {
     
     private int pageNumber;
     private int keyIndex;
+    private Charset charset;
 
     private NDX(File ndxFile, RandomAccessFile randomAccessFile, ReentrantLock threadLock) {
         this.ndxFile = ndxFile;
         this.randomAccessFile = randomAccessFile;
         this.threadLock = threadLock;
+        charset = StandardCharsets.UTF_8;
     }
 
     public static NDX open(File ndxFile) throws IOException {
@@ -104,23 +108,23 @@ public class NDX {
         dataType = IndexDataType.valueOf(buf.getShort() & 0xffff);
         int keyRecordSize = buf.getShort() & 0xffff;
         assert(keyRecordSize() == keyRecordSize)
-                : "Invalid key record size. Disk=" + keyRecordSize + "; Asserted=" + keyRecordSize();
+                : "Invalid key record size. Indicated=" + keyRecordSize + "; Expected=" + keyRecordSize();
         buf.position(buf.position() + 2); // Skip reserved
         unique = buf.getShort() != 0;
-        char[] keyChars = new char[buf.remaining()];
+        byte[] keyBytes = new byte[buf.remaining()];
         int i;
         for (i = 0; buf.hasRemaining(); i++) {
             byte b = buf.get();
-            keyChars[i] = (char) (b & 0xff);
+            keyBytes[i] = (byte) (b & 0xff);
             if (b == 0) {
                 break;
             }
         }
-        key = String.valueOf(keyChars, 0, i);
+        key = new String(keyBytes, charset);
     }
 
     private int keyRecordSize() {
-        return (int) Math.ceil(keyLength / 4f) * 4 + 8;
+        return ((int) Math.ceil(keyLength / 4f)) * 4 + 8;
     }
 
     /**
@@ -139,7 +143,7 @@ public class NDX {
     }
 
     /**
-     * Re-reads the current page.
+     * Reads the current page into the internal buffer.
      *
      * @throws IOException if an I/O error occurs
      */
@@ -182,7 +186,9 @@ public class NDX {
             switch (dataType) {
                 case DATE: {
                     DBFDate date = (DBFDate) value;
-                    value = String.valueOf(date.getYear()) + String.valueOf(date.getMonth()) + String.valueOf(date.getDay());
+                    // redefine requested value as string
+                    value = date.dtos();
+                    // fall through
                 }
                 default:
                 case CHARACTER:

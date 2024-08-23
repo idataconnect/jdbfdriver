@@ -216,7 +216,7 @@ public class DBFDate implements Serializable, Comparable<DBFDate>, Cloneable {
      * @return the date in xBase DTOS format
      */
     public String dtos() {
-        return String.valueOf(getYear()) + String.valueOf(getMonth()) + String.valueOf(getDay());
+        return String.format("%02d%02d%02d", getYear(), getMonth(), getDay());
     }
 
     /**
