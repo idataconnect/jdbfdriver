@@ -537,8 +537,8 @@ public class MDX implements DBFIndex {
         return buf.getInt(0);
     }
 
-    private int previousBlock() {
-        return buf.getInt(4);
+    private int previousBlock(int key, Tag tag) {
+        return buf.getInt(4 + key * keyRecordSize(tag));
     }
 
     /**
@@ -581,6 +581,10 @@ public class MDX implements DBFIndex {
      */
     private int nextBlockOrRecordNumber(int key, Tag tag) {
         return buf.getInt(8 + key * keyRecordSize(tag));
+    }
+
+    private int nextBlockOrRecordNumber() {
+        return nextBlockOrRecordNumber(this.keyIndex, this.tag);
     }
 
     private int find(Object value, Tag tag, int blockNumber) throws IOException {
@@ -727,7 +731,7 @@ public class MDX implements DBFIndex {
                 if (leaf) {
                     break;
                 }
-                gotoBlock(nextBlockOrRecordNumber(keysInBlock, null));
+                gotoBlock(nextBlockOrRecordNumber());
             }
         }
         return DBF.RECORD_NUMBER_EOF;

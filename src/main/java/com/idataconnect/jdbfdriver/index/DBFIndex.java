@@ -16,5 +16,5 @@ public interface DBFIndex {
      * @return the record number in the DBF file
      * @throws IOException if an I/O error occurs
      */
-    int prev();
+    int prev() throws IOException;
 }
