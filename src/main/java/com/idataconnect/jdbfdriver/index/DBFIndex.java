@@ -2,6 +2,9 @@ package com.idataconnect.jdbfdriver.index;
 
 import java.io.IOException;
 
+/**
+ * Contract for a type of DBF index.
+ */
 public interface DBFIndex {
 
     /**
@@ -17,4 +20,20 @@ public interface DBFIndex {
      * @throws IOException if an I/O error occurs
      */
     int prev() throws IOException;
+
+    /**
+     * Goes to the first record for this index.
+     *
+     * @return the record number of the first record
+     * @throws IOException if an I/O error occurs
+     */
+    public int gotoTop() throws IOException;
+
+    /**
+     * Goes to the last record for this index.
+     *
+     * @return the record number of the last record
+     * @throws IOException if an I/O error occurs
+     */
+    public int gotoBottom() throws IOException;
 }

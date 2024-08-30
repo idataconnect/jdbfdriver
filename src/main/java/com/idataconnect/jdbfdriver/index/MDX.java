@@ -40,6 +40,8 @@ import java.io.Serializable;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -48,7 +50,7 @@ import java.util.logging.Logger;
  * MDX multiple index implementation.
  */
 public class MDX implements DBFIndex {
-    
+
     public static final int BLOCK_SIZE = 512;
 
     protected final ReentrantLock threadLock;
@@ -85,7 +87,7 @@ public class MDX implements DBFIndex {
      * A tag within an MDX file, representing one of many indexes
      * contained within the MDX.
      */
-    protected class Tag implements Serializable {
+    public class Tag implements Serializable {
 
         private static final long serialVersionUID = 1L;
 
@@ -371,7 +373,7 @@ public class MDX implements DBFIndex {
      */
     protected void readStructure() throws IOException {
         FileChannel channel = randomAccessFile.getChannel();
-        
+
         // MDX header
         channel.position(0);
         buf.position(0);
@@ -539,6 +541,14 @@ public class MDX implements DBFIndex {
 
     private int previousBlock(int key, Tag tag) {
         return buf.getInt(4 + key * keyRecordSize(tag));
+    }
+
+    private int previousBlock() {
+        return previousBlock(this.keyIndex, this.tag);
+    }
+
+    public int find(Object value) throws IOException {
+        return find(value, this.tag, this.tag.getRootBlock());
     }
 
     /**
@@ -724,22 +734,85 @@ public class MDX implements DBFIndex {
     @Override
     public int next() throws IOException {
         final int keysInBlock = keysInPage();
-        final int previousBlock = previousBlock();
-        final boolean leaf = previousBlock == 0;
+        boolean leaf = nextBlockOrRecordNumber() != 0;
         while (true) {
-            if (this.keyIndex >= keysInBlock - 1) {
-                if (leaf) {
-                    break;
+            if (leaf) {
+                if (this.keyIndex >= keysInBlock - 1) {
+                    return DBF.RECORD_NUMBER_EOF;
+                } else {
+                    this.keyIndex++;
+                    return nextBlockOrRecordNumber();
                 }
-                gotoBlock(nextBlockOrRecordNumber());
             }
+            gotoBlock(nextBlockOrRecordNumber());
+            leaf = nextBlockOrRecordNumber() != 0;
         }
-        return DBF.RECORD_NUMBER_EOF;
     }
 
     @Override
     public int prev() throws IOException {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'prev'");
+        boolean leaf = nextBlockOrRecordNumber() != 0;
+        while (true) {
+            if (leaf) {
+                if (this.keyIndex == 0) {
+                    return DBF.RECORD_NUMBER_BOF;
+                } else {
+                    this.keyIndex--;
+                    return nextBlockOrRecordNumber();
+                }
+            }
+            gotoBlock(previousBlock());
+            leaf = nextBlockOrRecordNumber() != 0;
+        }
+    }
+
+    /**
+     * Sets the primary (aka master) tag.
+     * @param tag the tag to set as primary
+     */
+    public void setTag(Tag tag) {
+        this.tag = tag;
+    }
+
+    /**
+     * Sets the primary (aka master) tag, by name. If a tag with the given name
+     * exists in the index, it will be returned, otherwise, an empty optional will be returned.
+     *
+     * @param tagName the name of the tag
+     * @return the optional tag that was set
+     */
+    public Optional<Tag> setTag(String tagName) {
+        for (Tag t : tags) {
+            if (t.getName().equalsIgnoreCase(tagName)) {
+                this.tag = t;
+                return Optional.of(tag);
+            }
+        }
+
+        return Optional.empty();
+    }
+
+    /**
+     * Loads the first block and record for the primary tag.
+     *
+     * @throws IOException if an I/O error occurs
+     */
+    public int gotoTop() throws IOException {
+        gotoBlock(Objects.requireNonNull(this.tag, "tag is not set").getRootBlock());
+        while (previousBlock() != 0) {
+            gotoBlock(nextBlockOrRecordNumber());
+        }
+        return nextBlockOrRecordNumber();
+    }
+
+    /**
+     * Goes to the record that represents the last record in the index.
+     *
+     * @throws IOException if an I/O error occurs
+     */
+    public int gotoBottom() throws IOException {
+        gotoTop();
+        while (next() != DBF.RECORD_NUMBER_EOF);
+        return nextBlockOrRecordNumber();
     }
 }
