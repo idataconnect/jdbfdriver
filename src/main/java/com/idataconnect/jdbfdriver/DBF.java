@@ -36,6 +36,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.GregorianCalendar;
@@ -57,12 +58,12 @@ dbf.close();
  * </p>
  */
 public class DBF {
-    
+
     /** The record number representing the beginning of the file. */
     public static final int RECORD_NUMBER_BOF = 0;
     /** The record number representing the end of the file. */
     public static final int RECORD_NUMBER_EOF = -1;
-    
+
     private static final Logger log = Logger.getLogger(DBF.class.getName());
 
     /** The current directory. */
@@ -753,7 +754,7 @@ public class DBF {
                         case M:
                         case B:
                         case G:
-                            String dataString = new String(fieldData).trim();
+                            String dataString = new String(fieldData, StandardCharsets.UTF_8).trim();
                             if (dataString.length() == 0) {
                                 values[count] = new DBFValue(currentField, "");
                             } else {
@@ -1435,7 +1436,7 @@ public class DBF {
             while (buf.hasRemaining()) {
                 dbtChannel.write(buf);
             }
-            
+
             dbtChannel.close();
         } finally {
             if (isThreadSafetyEnabled()) {
