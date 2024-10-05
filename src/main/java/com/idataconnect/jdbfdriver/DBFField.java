@@ -32,6 +32,7 @@ package com.idataconnect.jdbfdriver;
 
 /**
  * Represents a field in a DBF file.
+ * 
  * @author ben
  */
 public class DBFField {
@@ -77,6 +78,7 @@ public class DBFField {
 
         /**
          * Gets the full (display) name for this field.
+         * 
          * @return the full name string.
          */
         public String getFullName() {
@@ -86,6 +88,7 @@ public class DBFField {
         /**
          * Gets whether this field is a boolean field. Currently, the only
          * field that is a boolean field is the <b>L</b> field type.
+         * 
          * @return whether the field is a boolean field.
          */
         public boolean isBooleanfield() {
@@ -94,6 +97,7 @@ public class DBFField {
 
         /**
          * Gets whether this field is a character field.
+         * 
          * @return whether this field is a character field.
          */
         public boolean isCharacterField() {
@@ -102,6 +106,7 @@ public class DBFField {
 
         /**
          * Gets whether this field is a date field.
+         * 
          * @return whether this field is a date field.
          */
         public boolean isDateField() {
@@ -110,6 +115,7 @@ public class DBFField {
 
         /**
          * Gets whether this field is a DBT (memo) field.
+         * 
          * @return whether this field is a DBT field.
          */
         public boolean isDbtField() {
@@ -118,6 +124,7 @@ public class DBFField {
 
         /**
          * Gets whether this field is a numeric field.
+         * 
          * @return whether this field is a numeric field.
          */
         public boolean isNumericField() {
@@ -127,6 +134,7 @@ public class DBFField {
         /**
          * Gets whether this field is a memo field, whose data is stored
          * externally to the DBF file.
+         * 
          * @return whether this field is a memo field.
          */
         public boolean isMemoField() {
@@ -147,9 +155,10 @@ public class DBFField {
 
     /**
      * Creates a field with the specified attributes.
-     * @param fieldName the name of the field
-     * @param fieldType the type of the field
-     * @param fieldLength the length of the field
+     * 
+     * @param fieldName     the name of the field
+     * @param fieldType     the type of the field
+     * @param fieldLength   the length of the field
      * @param decimalLength the length of the decimal portion of the field
      */
     public DBFField(String fieldName, FieldType fieldType, int fieldLength, int decimalLength) {
@@ -180,9 +189,10 @@ public class DBFField {
     /**
      * Creates a field and specifies all of the field's attributes,
      * using a string for the field type.
-     * @param fieldName the name of the field
+     * 
+     * @param fieldName     the name of the field
      * @param fieldTypeCode the code for the field type (e.g. "C")
-     * @param fieldLength the length of the field.
+     * @param fieldLength   the length of the field.
      * @param decimalLength the length of the decimal portion of the field
      */
     public DBFField(String fieldName, String fieldTypeCode, int fieldLength, int decimalLength) {
@@ -192,9 +202,10 @@ public class DBFField {
     /**
      * Creates a field, specifying the field name, field type, and field length,
      * with a decimal length of zero.
-     * @param fieldName the name of the field
+     * 
+     * @param fieldName     the name of the field
      * @param fieldTypeCode the code for the field type (e.g. "C")
-     * @param fieldLength the length of the field
+     * @param fieldLength   the length of the field
      */
     public DBFField(String fieldName, String fieldTypeCode, int fieldLength) {
         this(fieldName, fieldTypeCode, fieldLength, 0);
@@ -203,8 +214,9 @@ public class DBFField {
     /**
      * Creates a field, specifying the field name, field type, and field length,
      * with a decimal length of zero.
-     * @param fieldName the name of the field
-     * @param fieldType the field type
+     * 
+     * @param fieldName   the name of the field
+     * @param fieldType   the field type
      * @param fieldLength the length of the field
      */
     public DBFField(String fieldName, FieldType fieldType, int fieldLength) {
@@ -213,6 +225,7 @@ public class DBFField {
 
     /**
      * Gets the default value for the current field type.
+     * 
      * @return The default value.
      */
     public DBFValue getDefaultValue() {
@@ -226,7 +239,7 @@ public class DBFField {
                 return new DBFValue(this, new byte[0]);
             case N:
             case F:
-                return new DBFValue(this, new Double(0));
+                return new DBFValue(this, 0d);
             case L:
                 return new DBFValue(this, Boolean.FALSE);
             case D:
@@ -236,6 +249,7 @@ public class DBFField {
 
     /**
      * Gets the name of the field.
+     * 
      * @return the name of the field
      */
     public String getFieldName() {
@@ -244,6 +258,7 @@ public class DBFField {
 
     /**
      * Sets the name of the field.
+     * 
      * @param fieldName the name of the field
      */
     public void setFieldName(String fieldName) {
@@ -252,6 +267,7 @@ public class DBFField {
 
     /**
      * Gets the length of the decimal portion of the field.
+     * 
      * @return the length of the decimal portion of the field
      */
     public int getDecimalLength() {
@@ -260,6 +276,7 @@ public class DBFField {
 
     /**
      * Sets the length of the decimal portion of the field.
+     * 
      * @param decimalLength the length of the decimal portion of the field
      */
     public void setDecimalLength(int decimalLength) {
@@ -268,6 +285,7 @@ public class DBFField {
 
     /**
      * Gets the length of the field.
+     * 
      * @return the length of the field
      */
     public int getFieldLength() {
@@ -276,6 +294,7 @@ public class DBFField {
 
     /**
      * Sets the length of the field.
+     * 
      * @param fieldLength the length of the field
      */
     public void setFieldLength(int fieldLength) {
@@ -284,6 +303,7 @@ public class DBFField {
 
     /**
      * Gets the type of the field.
+     * 
      * @return the type of the field
      */
     public FieldType getFieldType() {
@@ -292,6 +312,7 @@ public class DBFField {
 
     /**
      * Sets the type of the field.
+     * 
      * @param fieldType the type of the field
      */
     public void setFieldType(FieldType fieldType) {

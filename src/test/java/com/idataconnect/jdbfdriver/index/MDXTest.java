@@ -64,32 +64,32 @@ public class MDXTest {
 
     @Test
     public void testDecodeIntegers() throws Exception {
-        byte[] buf = {0x36, 0x29, 0x10, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+        byte[] buf = { 0x36, 0x29, 0x10, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
         ByteBuffer bb = ByteBuffer.wrap(buf);
         double result = MDX.decodeNumeric(bb);
         assertEquals(10d, result);
 
-        buf = new byte[] {0x36, 0x29, 0x15, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+        buf = new byte[] { 0x36, 0x29, 0x15, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
         bb = ByteBuffer.wrap(buf);
         result = MDX.decodeNumeric(bb);
         assertEquals(15d, result);
 
-        buf = new byte[] {0x36, 0x29, 0x20, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+        buf = new byte[] { 0x36, 0x29, 0x20, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
         bb = ByteBuffer.wrap(buf);
         result = MDX.decodeNumeric(bb);
         assertEquals(20d, result);
 
-        buf = new byte[] {0x3a, 0x51, 0x10, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+        buf = new byte[] { 0x3a, 0x51, 0x10, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
         bb = ByteBuffer.wrap(buf);
         result = MDX.decodeNumeric(bb);
         assertEquals(100_000d, result);
 
-        buf = new byte[] {0x3d, 0x51, (byte) 0x99, (byte) 0x99, (byte) 0x99, (byte) 0x99, (byte) 0x90, 0, 0, 0, 0, 0};
+        buf = new byte[] { 0x3d, 0x51, (byte) 0x99, (byte) 0x99, (byte) 0x99, (byte) 0x99, (byte) 0x90, 0, 0, 0, 0, 0 };
         bb = ByteBuffer.wrap(buf);
         result = MDX.decodeNumeric(bb);
         assertEquals(999_999_999d, result);
 
-        buf = new byte[] {0x3e, 0x51, (byte) 0x10, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+        buf = new byte[] { 0x3e, 0x51, (byte) 0x10, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
         bb = ByteBuffer.wrap(buf);
         result = MDX.decodeNumeric(bb);
         assertEquals(1_000_000_000d, result);

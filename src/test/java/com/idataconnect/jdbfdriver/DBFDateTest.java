@@ -4,14 +4,8 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import org.junit.jupiter.api.Test;
 
-/**
- *
- */
 public class DBFDateTest {
 
-    /**
-     * Test of fromCalendarDays method, of class DBFDate.
-     */
     @Test
     public void testJulianDays() {
         System.out.println("fromCalendarDays");
@@ -35,15 +29,31 @@ public class DBFDateTest {
                 DBFDate.fromJulianDay(d.getJulianDay()));
     }
 
-    /**
-     * Test of getDayOfWeek method, of class DBFDate.
-     */
     @Test
     public void testGetDayOfWeek() {
         System.out.println("getDayOfWeek");
         DBFDate instance = new DBFDate(5, 18, 2012);
         int expResult = 5;
         int result = instance.getDayOfWeek();
+        assertEquals(expResult, result);
+    }
+
+    @Test
+    public void testCompareTo() {
+        System.out.println("compareTo");
+        DBFDate d1 = new DBFDate(5, 18, 2012);
+        DBFDate d2 = DBFDate.getCurrentDate();
+        int expResult = -1;
+        int result = d1.compareTo(d2);
+        assertEquals(expResult, result);
+
+        DBFDate d3 = new DBFDate(5, 18, 2012);
+        expResult = 0;
+        result = d1.compareTo(d3);
+        assertEquals(expResult, result);
+
+        expResult = 1;
+        result = d1.compareTo(new DBFDate(5, 18, 2011));
         assertEquals(expResult, result);
     }
 }

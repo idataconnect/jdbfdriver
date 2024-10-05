@@ -28,7 +28,6 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-// Some date routines in this file were inspired by: http://panda.com/calendar.html
 
 package com.idataconnect.jdbfdriver;
 
@@ -40,6 +39,7 @@ import java.util.GregorianCalendar;
  * A simplified date class to deal with dBase III DBF dates, which don't contain
  * time or timezone information. The date may also represent a blank date,
  * which is valid in xBase, and is similar to a null type.
+ * 
  * @author ben
  */
 public class DBFDate implements Serializable, Comparable<DBFDate>, Cloneable {
@@ -50,8 +50,8 @@ public class DBFDate implements Serializable, Comparable<DBFDate>, Cloneable {
      * Day of week names in English. This is simply to avoid having to call
      * the Java localization routines when printing the day names in English.
      */
-    transient static final String[] EN_DAY_NAMES = {"Sunday", "Monday", "Tuesday",
-        "Wednesday", "Thursday", "Friday", "Saturday"};
+    transient static final String[] EN_DAY_NAMES = { "Sunday", "Monday", "Tuesday",
+            "Wednesday", "Thursday", "Friday", "Saturday" };
 
     /** Year portion of the date value. */
     private short year = 0;
@@ -68,9 +68,10 @@ public class DBFDate implements Serializable, Comparable<DBFDate>, Cloneable {
 
     /**
      * Constructs a new date with the given month, day, and year.
+     * 
      * @param month the month of the new date
-     * @param day the day of the new date
-     * @param year the year of the new date
+     * @param day   the day of the new date
+     * @param year  the year of the new date
      */
     public DBFDate(int month, int day, int year) {
         this.month = (byte) month;
@@ -85,6 +86,7 @@ public class DBFDate implements Serializable, Comparable<DBFDate>, Cloneable {
 
     /**
      * Gets the current date as a DBF date.
+     * 
      * @return a DBF date representing the current date
      */
     public static DBFDate getCurrentDate() {
@@ -108,6 +110,7 @@ public class DBFDate implements Serializable, Comparable<DBFDate>, Cloneable {
 
     /**
      * Checks if this date instance is a blank date.
+     * 
      * @return whether the date is blank
      */
     public boolean isBlank() {
@@ -127,7 +130,7 @@ public class DBFDate implements Serializable, Comparable<DBFDate>, Cloneable {
         int y = getYear();
         int m = getMonth();
         final int d = getDay();
-        
+
         if (m <= 2) {
             y--;
             m += 12;
@@ -146,7 +149,7 @@ public class DBFDate implements Serializable, Comparable<DBFDate>, Cloneable {
      * Creates a DBF date from the given Julian day.
      *
      * @param julianDay the Julian day to convert from, as returned
-     * by {@link #getJulianDay}
+     *                  by {@link #getJulianDay}
      * @return a new DBF date instance
      */
     public static DBFDate fromJulianDay(int julianDay) {
@@ -169,8 +172,9 @@ public class DBFDate implements Serializable, Comparable<DBFDate>, Cloneable {
     /**
      * Calculates the day of the week that the date represented by this date
      * object, occurs on. Sunday is zero, Monday is one, etc.
+     * 
      * @return the day of the week that this date occurs on, or -1 if this
-     * is an empty date
+     *         is an empty date
      */
     public int getDayOfWeek() {
         if (getDay() == 0) {
@@ -198,6 +202,7 @@ public class DBFDate implements Serializable, Comparable<DBFDate>, Cloneable {
 
     /**
      * Gets the day of week represented by this date, localized in English.
+     * 
      * @return the day of week as an English localized string
      */
     public String getDayOfWeekEn() {
@@ -233,6 +238,7 @@ public class DBFDate implements Serializable, Comparable<DBFDate>, Cloneable {
      * Returns the date in U.S. xBase style, including the century. For example,
      * for August 1, 1980, <tt>"{8/1/1980}"</tt> is returned. If the date is
      * blank, <tt>"{  /  /    }"</tt> is returned.
+     * 
      * @return the date represented by this date object
      */
     @Override
@@ -253,7 +259,7 @@ public class DBFDate implements Serializable, Comparable<DBFDate>, Cloneable {
      */
     @Override
     public boolean equals(Object obj) {
-        if (! (obj instanceof DBFDate)) {
+        if (!(obj instanceof DBFDate)) {
             return false;
         }
 
@@ -293,6 +299,7 @@ public class DBFDate implements Serializable, Comparable<DBFDate>, Cloneable {
 
     /**
      * Gets the month of the year, starting at 1.
+     * 
      * @return the month
      */
     public byte getMonth() {
@@ -301,6 +308,7 @@ public class DBFDate implements Serializable, Comparable<DBFDate>, Cloneable {
 
     /**
      * Sets the month of the year, starting at 1.
+     * 
      * @param month the month to set
      */
     public void setMonth(byte month) {
