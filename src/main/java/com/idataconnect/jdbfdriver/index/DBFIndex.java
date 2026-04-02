@@ -36,4 +36,22 @@ public interface DBFIndex {
      * @throws IOException if an I/O error occurs
      */
     public int gotoBottom() throws IOException;
+
+    /**
+     * Inserts a key and record number into the index.
+     *
+     * @param key the key to insert
+     * @param recordNumber the record number to associate with the key
+     * @throws IOException if an I/O error occurs
+     */
+    void insert(Object key, int recordNumber) throws IOException;
+
+    /**
+     * Deletes a key and record number from the index.
+     *
+     * @param key the key to delete
+     * @param recordNumber the record number to remove
+     * @throws IOException if an I/O error occurs
+     */
+    void delete(Object key, int recordNumber) throws IOException;
 }

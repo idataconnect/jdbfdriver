@@ -43,6 +43,10 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayDeque;
+import java.util.Arrays;
+import java.util.Calendar;
+import java.util.Deque;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.locks.ReentrantLock;
@@ -79,6 +83,9 @@ public class MDX implements DBFIndex {
     protected int keyIndex; // key within node
     protected Tag tag;
 
+    /** Stack of (blockNumber, keyIndex) pairs for multi-level tree traversal. */
+    private final Deque<int[]> traversalStack = new ArrayDeque<>();
+
     protected MDX(File mdxFile, RandomAccessFile randomAccessFile, ReentrantLock threadLock) {
         this.mdxFile = mdxFile;
         this.randomAccessFile = randomAccessFile;
@@ -108,6 +115,8 @@ public class MDX implements DBFIndex {
         private int keysPerBlock;
         private int secondaryKeyType;
         private int keyItemLength;
+        /** Number of levels in the B-tree for this tag. */
+        int levels = 1;
 
         /**
          * Getter for the header block.
@@ -606,12 +615,11 @@ public class MDX implements DBFIndex {
     private int find(Object value, Tag tag, int blockNumber) throws IOException {
         gotoBlock(blockNumber);
         final int keysInBlock = keysInBlock();
-        final boolean leaf = nextBlockOrRecordNumber(0, tag) != 0;
+        // Leaf detection: if the child pointer of entry 0 is zero, it's a leaf
+        final boolean leaf = previousBlock(0, tag) == 0;
 
-        int nextBlockOrRecordNumber;
         int compareResult = -1;
         for (int i = 0; i < keysInBlock && compareResult < 0; i++) {
-            nextBlockOrRecordNumber = nextBlockOrRecordNumber(i, tag);
             switch (tag.getDataType()) {
                 case DATE: {
                     DBFDate date = (DBFDate) value;
@@ -663,20 +671,24 @@ public class MDX implements DBFIndex {
             if (leaf) {
                 // A leaf node can either have a match or fail to match
                 if (compareResult == 0) {
-                    // Search term match
-                    return nextBlockOrRecordNumber;
+                    // Search term match — record number is in nextBlockOrRecordNumber
+                    return nextBlockOrRecordNumber(i, tag);
                 } else if (compareResult > 0) {
                     break;
                 }
             } else {
-                // A root or inner node will follow the highest record that is less than a match
-                if (compareResult > 0) {
-                    if (i == 0) {
-                        break;
-                    }
-                    return find(value, tag, nextBlockOrRecordNumber(i - 1, tag));
+                // Internal node: keys represent max values in subtrees.
+                // previousBlock(i) is the child pointer for key[i]'s subtree.
+                if (compareResult >= 0) {
+                    // key[i] >= searchValue — descend into this child
+                    return find(value, tag, previousBlock(i, tag));
                 }
             }
+        }
+
+        // For internal nodes: if searchValue > all keys, descend into the last child
+        if (!leaf && keysInBlock > 0) {
+            return find(value, tag, previousBlock(keysInBlock - 1, tag));
         }
 
         return DBF.RECORD_NUMBER_EOF;
@@ -850,36 +862,122 @@ public class MDX implements DBFIndex {
     @Override
     public int next() throws IOException {
         final int keysInBlock = keysInBlock();
-        boolean leaf = nextBlockOrRecordNumber() != 0;
-        while (true) {
-            if (leaf) {
-                if (this.keyIndex >= keysInBlock - 1) {
-                    return DBF.RECORD_NUMBER_EOF;
-                } else {
+        boolean leaf = previousBlock(0, tag) == 0;
+        if (leaf) {
+            if (this.keyIndex >= keysInBlock - 1) {
+                // Try to pop up to a parent
+                while (!traversalStack.isEmpty()) {
+                    int[] parent = traversalStack.pop();
+                    gotoBlock(parent[0]);
+                    this.keyIndex = parent[1];
+                    if (this.keyIndex < keysInBlock() - 1) {
+                        this.keyIndex++;
+                        // Descend leftmost from this new child
+                        return descendToLeftmostLeaf(previousBlock());
+                    }
+                    // else keep popping
+                }
+                return DBF.RECORD_NUMBER_EOF;
+            } else {
+                this.keyIndex++;
+                return nextBlockOrRecordNumber();
+            }
+        } else {
+            // Internal node — descend into next child
+            this.keyIndex++;
+            if (this.keyIndex < keysInBlock) {
+                return descendToLeftmostLeaf(previousBlock());
+            }
+            // Pop up
+            while (!traversalStack.isEmpty()) {
+                int[] parent = traversalStack.pop();
+                gotoBlock(parent[0]);
+                this.keyIndex = parent[1];
+                if (this.keyIndex < keysInBlock() - 1) {
                     this.keyIndex++;
-                    return nextBlockOrRecordNumber();
+                    return descendToLeftmostLeaf(previousBlock());
                 }
             }
-            gotoBlock(nextBlockOrRecordNumber());
-            leaf = nextBlockOrRecordNumber() != 0;
+            return DBF.RECORD_NUMBER_EOF;
         }
     }
 
     @Override
     public int prev() throws IOException {
-        boolean leaf = nextBlockOrRecordNumber() != 0;
-        while (true) {
-            if (leaf) {
-                if (this.keyIndex == 0) {
-                    return DBF.RECORD_NUMBER_BOF;
-                } else {
+        boolean leaf = previousBlock(0, tag) == 0;
+        if (leaf) {
+            if (this.keyIndex == 0) {
+                // Try to pop to parent
+                while (!traversalStack.isEmpty()) {
+                    int[] parent = traversalStack.pop();
+                    gotoBlock(parent[0]);
+                    this.keyIndex = parent[1];
+                    if (this.keyIndex > 0) {
+                        this.keyIndex--;
+                        return descendToRightmostLeaf(previousBlock());
+                    }
+                }
+                return DBF.RECORD_NUMBER_BOF;
+            } else {
+                this.keyIndex--;
+                return nextBlockOrRecordNumber();
+            }
+        } else {
+            // Internal node — shouldn't normally be here, but handle it
+            if (this.keyIndex > 0) {
+                this.keyIndex--;
+                return descendToRightmostLeaf(previousBlock());
+            }
+            while (!traversalStack.isEmpty()) {
+                int[] parent = traversalStack.pop();
+                gotoBlock(parent[0]);
+                this.keyIndex = parent[1];
+                if (this.keyIndex > 0) {
                     this.keyIndex--;
-                    return nextBlockOrRecordNumber();
+                    return descendToRightmostLeaf(previousBlock());
                 }
             }
-            gotoBlock(previousBlock());
-            leaf = nextBlockOrRecordNumber() != 0;
+            return DBF.RECORD_NUMBER_BOF;
         }
+    }
+
+    /**
+     * Descends from the given child block to the leftmost leaf entry.
+     * Pushes traversal state onto the stack along the way.
+     *
+     * @param childBlock the block to start descending from
+     * @return the record number of the leftmost leaf entry
+     * @throws IOException if an I/O error occurs
+     */
+    private int descendToLeftmostLeaf(int childBlock) throws IOException {
+        traversalStack.push(new int[] { blockNumber, keyIndex });
+        gotoBlock(childBlock);
+        while (previousBlock(0, tag) != 0) {
+            traversalStack.push(new int[] { blockNumber, 0 });
+            gotoBlock(previousBlock(0, tag));
+        }
+        this.keyIndex = 0;
+        return nextBlockOrRecordNumber();
+    }
+
+    /**
+     * Descends from the given child block to the rightmost leaf entry.
+     * Pushes traversal state onto the stack along the way.
+     *
+     * @param childBlock the block to start descending from
+     * @return the record number of the rightmost leaf entry
+     * @throws IOException if an I/O error occurs
+     */
+    private int descendToRightmostLeaf(int childBlock) throws IOException {
+        traversalStack.push(new int[] { blockNumber, keyIndex });
+        gotoBlock(childBlock);
+        while (previousBlock(0, tag) != 0) {
+            int last = keysInBlock() - 1;
+            traversalStack.push(new int[] { blockNumber, last });
+            gotoBlock(previousBlock(last, tag));
+        }
+        this.keyIndex = keysInBlock() - 1;
+        return nextBlockOrRecordNumber();
     }
 
     /**
@@ -914,10 +1012,14 @@ public class MDX implements DBFIndex {
      * @throws IOException if an I/O error occurs
      */
     public int gotoTop() throws IOException {
+        traversalStack.clear();
         gotoBlock(Objects.requireNonNull(this.tag, "tag is not set").getRootBlock());
-        while (previousBlock() != 0) {
-            gotoBlock(nextBlockOrRecordNumber());
+        // Descend to leftmost leaf via child pointers
+        while (previousBlock(0, tag) != 0) {
+            traversalStack.push(new int[] { blockNumber, 0 });
+            gotoBlock(previousBlock(0, tag));
         }
+        this.keyIndex = 0;
         return nextBlockOrRecordNumber();
     }
 
@@ -927,8 +1029,664 @@ public class MDX implements DBFIndex {
      * @throws IOException if an I/O error occurs
      */
     public int gotoBottom() throws IOException {
-        gotoTop();
-        while (next() != DBF.RECORD_NUMBER_EOF);
+        traversalStack.clear();
+        gotoBlock(Objects.requireNonNull(this.tag, "tag is not set").getRootBlock());
+        // Descend to rightmost leaf via child pointers
+        while (previousBlock(0, tag) != 0) {
+            int last = keysInBlock() - 1;
+            traversalStack.push(new int[] { blockNumber, last });
+            gotoBlock(previousBlock(last, tag));
+        }
+        this.keyIndex = keysInBlock() - 1;
         return nextBlockOrRecordNumber();
+    }
+
+    // -----------------------------------------------------------------------
+    // Write support
+    // -----------------------------------------------------------------------
+
+    /**
+     * Creates a new, empty MDX file.
+     *
+     * @param mdxFile the file to create
+     * @param dbfName the name of the associated DBF file (up to 15 characters)
+     * @return a reference to the created MDX
+     * @throws IOException if an I/O error occurs
+     */
+    public static MDX create(File mdxFile, String dbfName) throws IOException {
+        RandomAccessFile raf = new RandomAccessFile(mdxFile,
+                "rw" + (DBF.isSynchronousWritesEnabled() ? "s" : ""));
+        MDX mdx = new MDX(mdxFile, raf, new ReentrantLock());
+        mdx.dbfName = dbfName;
+        mdx.blockSizeMultiplier = 2;
+        mdx.nodeSize = 2 * BLOCK_SIZE;
+        mdx.production = false;
+        mdx.keysInTag = 48;
+        mdx.tagLength = 32;
+        mdx.tagsInUse = 0;
+        // Block 0 is the MDX header (first 544 bytes + tag descriptors).
+        // Tag descriptors: up to 48 tags × 32 bytes = 1536 bytes + 544 = 2080 bytes.
+        // ceil(2080/512) = 5 blocks consumed by the header area (blocks 0-4).
+        // Block 5 onwards are used for tag-header blocks and b-tree data.
+        mdx.numberOfBlocks = 5;
+        mdx.firstFreeBlock = 0;
+        mdx.availableBlock = 5;
+        mdx.tags = new Tag[0];
+        mdx.writeHeader();
+        return mdx;
+    }
+
+    /**
+     * Adds a new tag (index) to this MDX file.
+     *
+     * @param tagName the name of the tag (up to 10 characters, will be upper-cased)
+     * @param expression the key expression (field name or xBase expression)
+     * @param dataType the data type of the key
+     * @param unique whether the index should enforce unique keys
+     * @param descending whether the index should be in descending order
+     * @throws IOException if an I/O error occurs
+     */
+    public void addTag(String tagName, String expression, IndexDataType dataType,
+            boolean unique, boolean descending) throws IOException {
+        if (tagsInUse >= keysInTag) {
+            throw new IOException("MDX is full (" + keysInTag + " tags maximum)");
+        }
+
+        Tag t = new Tag();
+        t.setName(tagName.toUpperCase());
+        t.setDataType(dataType);
+        t.setUnique(unique);
+        t.setDescending(descending);
+
+        // Determine key length from data type
+        switch (dataType) {
+            case NUMERIC:
+                t.setKeyLength(12); // dBase custom BCD encoding
+                break;
+            case DATE:
+                t.setKeyLength(8);  // YYYYMMDD as string
+                break;
+            default: // CHARACTER
+                // Use expression length, but at least 1 and at most 240
+                t.setKeyLength(Math.max(1, Math.min(240, expression.length())));
+                break;
+        }
+        int krs = keyRecordSize(t);
+        // keysPerBlock: the node holds [count:4][leftPtr:4] + keysPerBlock * krs <= nodeSize
+        t.setKeysPerBlock((nodeSize - 8) / krs);
+        t.setKeyItemLength(krs);
+
+        // Allocate a header block for this tag
+        int headerBlock = allocateBlock();
+        t.setHeaderBlock(headerBlock);
+
+        // Allocate the initial (empty) root block
+        int rootBlock = allocateBlock();
+        t.setRootBlock(rootBlock);
+        t.setSizeInBlocks(1);
+
+        // Write the empty root block (all zeros = 0 keys)
+        buf.position(0);
+        buf.limit(nodeSize);
+        Arrays.fill(buf.array(), 0, nodeSize, (byte) 0);
+        writeBlock(rootBlock);
+
+        // Write tag header block
+        writeTagHeader(t, expression);
+
+        // Append tag to the array and write updated MDX header + tag descriptors
+        Tag[] newTags = Arrays.copyOf(tags, tagsInUse + 1);
+        newTags[tagsInUse] = t;
+        tags = newTags;
+        tagsInUse++;
+        writeHeader();
+    }
+
+    /**
+     * Inserts a key/record-number pair into the currently active tag.
+     *
+     * @param key the key value
+     * @param recordNumber the record number in the DBF
+     * @throws IOException if an I/O error occurs
+     */
+    @Override
+    public void insert(Object key, int recordNumber) throws IOException {
+        if (tag == null) {
+            throw new IllegalStateException("No tag is set");
+        }
+        byte[] encodedKey = encodeKey(key, tag);
+        SplitResult split = insertIntoBlock(tag.getRootBlock(), encodedKey, recordNumber, tag.levels);
+        if (split != null) {
+            // Root was split — create a new root with two entries
+            int newRoot = allocateBlock();
+            int oldRoot = tag.getRootBlock();
+            int krs = keyRecordSize(tag);
+            buf.position(0);
+            buf.limit(nodeSize);
+            Arrays.fill(buf.array(), 0, nodeSize, (byte) 0);
+            // Entry 0: child=oldRoot (left subtree), key=promotedKey (max of left)
+            buf.putInt(0, 2);                  // count = 2
+            buf.putInt(4, oldRoot);            // entry[0].childPtr = left subtree
+            // entry[0].record = 0 (internal node)
+            buf.position(12);
+            buf.put(split.promotedKey);
+            // Entry 1: child=rightBlock (right subtree), key=max key of right subtree
+            buf.putInt(4 + krs, split.rightBlock); // entry[1].childPtr = right subtree
+            // entry[1].record = 0 (internal node)
+            buf.position(12 + krs);
+            buf.put(split.rightMaxKey);
+            writeBlock(newRoot);
+            tag.setRootBlock(newRoot);
+            tag.levels++;
+            writeTagHeader(tag, null);
+            writeHeader();
+        }
+    }
+
+    /**
+     * Deletes a key/record-number pair from the currently active tag.
+     * This implementation performs a simple search-and-remove on the leaf node.
+     * It does not rebalance the tree.
+     *
+     * @param key the key value
+     * @param recordNumber the record number in the DBF
+     * @throws IOException if an I/O error occurs
+     */
+    @Override
+    public void delete(Object key, int recordNumber) throws IOException {
+        if (tag == null) {
+            return;
+        }
+        byte[] encodedKey = encodeKey(key, tag);
+        deleteFromBlock(tag.getRootBlock(), encodedKey, recordNumber, tag.levels);
+    }
+
+    /**
+     * Recursively inserts a key into the B-tree rooted at {@code blockNum}.
+     *
+     * @param blockNum the block to insert into
+     * @param key the encoded key bytes
+     * @param recordNumber the record number
+     * @param level the level in the tree (1 = leaf)
+     * @return a SplitResult if the block was split, or null if no split occurred
+     */
+    private SplitResult insertIntoBlock(int blockNum, byte[] key, int recordNumber, int level)
+            throws IOException {
+        gotoBlock(blockNum);
+        int count = keysInBlock();
+        int krs = keyRecordSize(tag);
+        boolean isLeaf = (level <= 1);
+
+        // Find insertion position (sorted order)
+        int pos = 0;
+        while (pos < count) {
+            byte[] storedKey = readRawKey(pos);
+            if (compareKeys(key, storedKey) < 0) {
+                break;
+            }
+            pos++;
+        }
+
+        if (isLeaf) {
+            // Leaf insert: childPtr=0, recordNum=actual record
+            if (count < tag.getKeysPerBlock()) {
+                insertKeyAt(pos, 0, recordNumber, key, count, krs);
+                buf.putInt(0, count + 1);
+                writeBlock(blockNum);
+                return null;
+            } else {
+                return splitBlock(blockNum, pos, 0, recordNumber, key, count, krs, true);
+            }
+        } else {
+            // Internal node: descend into correct child
+            // Each key[i] represents the max value in the subtree at previousBlock(i).
+            // If pos < count, searchKey < key[pos], so descend into previousBlock(pos).
+            // If pos == count, searchKey > all keys, descend into previousBlock(count-1)
+            // and we may need to update that entry's key afterwards.
+            int childIdx = (pos < count) ? pos : count - 1;
+            int childBlock = previousBlock(childIdx, tag);
+            SplitResult childSplit = insertIntoBlock(childBlock, key, recordNumber, level - 1);
+
+            // Re-read this block (since gotoBlock may have changed the buffer)
+            gotoBlock(blockNum);
+            count = keysInBlock();
+
+            if (childSplit == null) {
+                // If we inserted into the last child and the new key is larger
+                // than the current max, update the key in the parent
+                if (pos == count && compareKeys(key, readRawKey(count - 1)) > 0) {
+                    buf.position(12 + (count - 1) * krs);
+                    buf.put(key, 0, key.length);
+                    writeBlock(blockNum);
+                }
+                return null;
+            }
+
+            // Child was split — update the existing entry's key to the promoted key
+            // (max of left child) and insert a new entry for the right child
+            buf.position(12 + childIdx * krs);
+            buf.put(childSplit.promotedKey, 0, childSplit.promotedKey.length);
+
+            // Insert new entry for right child AFTER childIdx
+            int insertPos = childIdx + 1;
+            if (count < tag.getKeysPerBlock()) {
+                insertKeyAt(insertPos, childSplit.rightBlock, 0, childSplit.rightMaxKey, count, krs);
+                buf.putInt(0, count + 1);
+                writeBlock(blockNum);
+                return null;
+            } else {
+                return splitBlock(blockNum, insertPos, childSplit.rightBlock, 0,
+                        childSplit.rightMaxKey, count, krs, false);
+            }
+        }
+    }
+
+    /**
+     * Inserts a key at position {@code pos} within the current buffer,
+     * shifting existing entries right.
+     *
+     * @param pos the position to insert at
+     * @param childPtr the child pointer (0 for leaf entries)
+     * @param recNum the record number (0 for internal entries)
+     * @param key the key data bytes
+     * @param count the current number of entries
+     * @param krs the key record size (stride)
+     */
+    private void insertKeyAt(int pos, int childPtr, int recNum, byte[] key, int count, int krs) {
+        // Shift entries [pos..count-1] one slot to the right
+        for (int i = count - 1; i >= pos; i--) {
+            int srcOff = 4 + i * krs;
+            int dstOff = 4 + (i + 1) * krs;
+            for (int b = 0; b < krs; b++) {
+                buf.put(dstOff + b, buf.get(srcOff + b));
+            }
+        }
+        // Write the new entry
+        buf.putInt(4 + pos * krs, childPtr);
+        buf.putInt(8 + pos * krs, recNum);
+        buf.position(12 + pos * krs);
+        buf.put(key, 0, key.length);
+    }
+
+    /**
+     * Splits a full block and returns the promoted middle key.
+     * The left half stays in {@code blockNum}; the right half goes into a new block.
+     *
+     * @param blockNum the block being split
+     * @param insertPos where the new entry should be inserted
+     * @param childPtr child pointer for the new entry
+     * @param recNum record number for the new entry
+     * @param newKey key data for the new entry
+     * @param count current number of entries
+     * @param krs key record size (stride)
+     * @param isLeaf whether this is a leaf node
+     * @return the split result containing promoted key, right max key, and right block number
+     */
+    private SplitResult splitBlock(int blockNum, int insertPos, int childPtr, int recNum,
+            byte[] newKey, int count, int krs, boolean isLeaf) throws IOException {
+        // Materialise all count+1 entries (existing + the new one to insert)
+        int total = count + 1;
+        int[] childPtrs = new int[total];
+        int[] recNums = new int[total];
+        byte[][] keys = new byte[total][newKey.length];
+
+        for (int i = 0, src = 0; i < total; i++) {
+            if (i == insertPos) {
+                childPtrs[i] = childPtr;
+                recNums[i] = recNum;
+                System.arraycopy(newKey, 0, keys[i], 0, newKey.length);
+            } else {
+                childPtrs[i] = buf.getInt(4 + src * krs);
+                recNums[i] = buf.getInt(8 + src * krs);
+                buf.position(12 + src * krs);
+                buf.get(keys[i], 0, newKey.length);
+                src++;
+            }
+        }
+
+        int mid = total / 2;
+        byte[] promotedKey = Arrays.copyOf(keys[mid], keys[mid].length);
+        byte[] rightMaxKey = Arrays.copyOf(keys[total - 1], keys[total - 1].length);
+
+        // Write left block (entries 0..mid)
+        Arrays.fill(buf.array(), 0, nodeSize, (byte) 0);
+        int leftCount = mid + 1;
+        for (int i = 0; i < leftCount; i++) {
+            buf.putInt(4 + i * krs, childPtrs[i]);
+            buf.putInt(8 + i * krs, recNums[i]);
+            buf.position(12 + i * krs);
+            buf.put(keys[i]);
+        }
+        buf.putInt(0, leftCount);
+        writeBlock(blockNum);
+
+        // Write right block (entries mid+1..total-1)
+        int rightBlock = allocateBlock();
+        Arrays.fill(buf.array(), 0, nodeSize, (byte) 0);
+        int rightStart = mid + 1;
+        int rightCount = total - rightStart;
+        for (int i = 0; i < rightCount; i++) {
+            buf.putInt(4 + i * krs, childPtrs[rightStart + i]);
+            buf.putInt(8 + i * krs, recNums[rightStart + i]);
+            buf.position(12 + i * krs);
+            buf.put(keys[rightStart + i]);
+        }
+        buf.putInt(0, rightCount);
+        writeBlock(rightBlock);
+
+        return new SplitResult(promotedKey, rightMaxKey, rightBlock);
+    }
+
+    /**
+     * Recursively deletes a key from the B-tree.
+     * Does not rebalance; simply removes the entry from the leaf.
+     */
+    private boolean deleteFromBlock(int blockNum, byte[] key, int recordNumber, int level)
+            throws IOException {
+        gotoBlock(blockNum);
+        int count = keysInBlock();
+        int krs = keyRecordSize(tag);
+        boolean isLeaf = (level <= 1);
+
+        for (int i = 0; i < count; i++) {
+            byte[] storedKey = readRawKey(i);
+            int cmp = compareKeys(key, storedKey);
+            if (cmp < 0) {
+                if (!isLeaf) {
+                    int childBlock = previousBlock(i, tag);
+                    return deleteFromBlock(childBlock, key, recordNumber, level - 1);
+                }
+                return false; // key not found
+            }
+            if (cmp == 0) {
+                if (isLeaf) {
+                    int ptr = buf.getInt(8 + i * krs);
+                    if (ptr == recordNumber) {
+                        // Shift entries left (each entry spans krs bytes starting at offset 4+i*krs)
+                        for (int j = i; j < count - 1; j++) {
+                            int srcOff = 4 + (j + 1) * krs;
+                            int dstOff = 4 + j * krs;
+                            for (int b = 0; b < krs; b++) {
+                                buf.put(dstOff + b, buf.get(srcOff + b));
+                            }
+                        }
+                        // Zero out the last slot
+                        int lastOff = 4 + (count - 1) * krs;
+                        Arrays.fill(buf.array(), lastOff, lastOff + krs, (byte) 0);
+                        buf.putInt(0, count - 1);
+                        writeBlock(blockNum);
+                        return true;
+                    }
+                } else {
+                    // key matches entry[i], descend into child[i]
+                    int childBlock = previousBlock(i, tag);
+                    return deleteFromBlock(childBlock, key, recordNumber, level - 1);
+                }
+            }
+        }
+        if (!isLeaf && count > 0) {
+            // key > all entries, descend into last child
+            int childBlock = previousBlock(count - 1, tag);
+            return deleteFromBlock(childBlock, key, recordNumber, level - 1);
+        }
+        return false;
+    }
+
+    /**
+     * Reads the raw key bytes for slot {@code i} from the current buffer.
+     */
+    private byte[] readRawKey(int i) {
+        int keyLen = tag.getKeyLength();
+        byte[] k = new byte[keyLen];
+        buf.position(12 + i * keyRecordSize(tag));
+        buf.get(k);
+        return k;
+    }
+
+    /**
+     * Compares two keys lexicographically (unsigned byte comparison).
+     */
+    private static int compareKeys(byte[] a, byte[] b) {
+        for (int i = 0; i < a.length && i < b.length; i++) {
+            int diff = (a[i] & 0xff) - (b[i] & 0xff);
+            if (diff != 0) return diff;
+        }
+        return a.length - b.length;
+    }
+
+    /**
+     * Encodes a Java value into the raw byte representation used by the MDX B-tree.
+     */
+    private static byte[] encodeKey(Object value, Tag tag) {
+        byte[] bytes = new byte[tag.getKeyLength()];
+        switch (tag.getDataType()) {
+            case CHARACTER:
+            case DATE: {
+                String s = (value instanceof DBFDate)
+                        ? ((DBFDate) value).dtos()
+                        : (value == null ? "" : value.toString());
+                byte[] src = s.getBytes(StandardCharsets.UTF_8);
+                int len = Math.min(src.length, bytes.length);
+                System.arraycopy(src, 0, bytes, 0, len);
+                // Pad remainder with spaces (matches how dBase stores character keys)
+                Arrays.fill(bytes, len, bytes.length, (byte) ' ');
+                break;
+            }
+            case NUMERIC: {
+                double d;
+                if (value instanceof Number) {
+                    d = ((Number) value).doubleValue();
+                } else {
+                    d = Double.parseDouble(value.toString());
+                }
+                encodeNumeric(d, bytes);
+                break;
+            }
+        }
+        return bytes;
+    }
+
+    /**
+     * Encodes a double value into the 12-byte dBase BCD format used for MDX numeric keys.
+     *
+     * @param d the value to encode
+     * @param out a 12-byte array to receive the encoded value
+     */
+    static void encodeNumeric(double d, byte[] out) {
+        if (out.length < 12) {
+            throw new IllegalArgumentException("Output array must be at least 12 bytes");
+        }
+        Arrays.fill(out, (byte) 0);
+        if (d == 0) {
+            out[1] = SIGN_ZERO;
+            return;
+        }
+        boolean negative = d < 0;
+        if (negative) d = -d;
+
+        // Count digits to left of decimal to compute size byte
+        int digitsLeft = (d >= 1) ? (int) Math.floor(Math.log10(d)) + 1 : 0;
+        out[0] = (byte) (0x34 + digitsLeft);
+        out[1] = negative ? SIGN_NEGATIVE_WITHOUT_DECIMAL : SIGN_POSITIVE_WITHOUT_DECIMAL;
+
+        // Round to 18 significant digits and encode as BCD
+        // Scale so integer part holds all 18 digits
+        double scaled = d * Math.pow(10, 18 - digitsLeft);
+        long lv = Math.round(scaled);
+
+        // Encode 18 digits as 9 BCD bytes (2 digits per byte), stored in out[2..11]
+        // Digits are stored most-significant first
+        String digits = String.format("%018d", lv);
+        for (int i = 0; i < 9; i++) {
+            int d1 = digits.charAt(i * 2) - '0';
+            int d2 = digits.charAt(i * 2 + 1) - '0';
+            out[2 + i] = (byte) ((d1 << 4) | d2);
+        }
+    }
+
+    /**
+     * Allocates a new block. Blocks are addressed relative to BLOCK_SIZE(512)
+     * but a "block" in the B-tree occupies {@code blockSizeMultiplier} physical blocks.
+     *
+     * @return the block number of the newly allocated block
+     * @throws IOException if an I/O error occurs
+     */
+    private int allocateBlock() throws IOException {
+        int blockNum = availableBlock;
+        availableBlock += blockSizeMultiplier;
+        numberOfBlocks = availableBlock;
+        // Zero-fill the new block on disk
+        FileChannel ch = randomAccessFile.getChannel();
+        byte[] zeros = new byte[nodeSize];
+        ch.position((long) BLOCK_SIZE * blockNum);
+        ch.write(ByteBuffer.wrap(zeros));
+        return blockNum;
+    }
+
+    /**
+     * Writes the current internal buffer as the specified block.
+     *
+     * @param blockNum the block number to write
+     * @throws IOException if an I/O error occurs
+     */
+    private void writeBlock(int blockNum) throws IOException {
+        FileChannel ch = randomAccessFile.getChannel();
+        buf.position(0);
+        buf.limit(nodeSize);
+        ch.position((long) BLOCK_SIZE * blockNum);
+        while (buf.hasRemaining()) {
+            ch.write(buf);
+        }
+    }
+
+    /**
+     * Writes the tag header block for the given tag.
+     * Pass {@code expression} as null to preserve the existing expression stored
+     * in the block (used when updating rootBlock/levels after a split).
+     */
+    private void writeTagHeader(Tag t, String expression) throws IOException {
+        FileChannel ch = randomAccessFile.getChannel();
+        ByteBuffer hb = ByteBuffer.allocate(BLOCK_SIZE).order(ByteOrder.LITTLE_ENDIAN);
+        // If we need to preserve an existing expression, read it first
+        if (expression == null) {
+            ch.position((long) BLOCK_SIZE * t.getHeaderBlock());
+            ch.read(hb);
+            hb.flip();
+            // Overwrite only the fields we manage
+            hb.putInt(0, t.getRootBlock());
+            // levels is at byte 22 in our scheme — update it
+            hb.put(22, (byte) t.levels);
+        } else {
+            // Fresh write
+            byte kfmt = t.isDescending() ? (byte) 0x18 : (byte) 0x10;
+            byte ktype = (t.getDataType() == IndexDataType.NUMERIC) ? (byte) 'N' : (byte) 'C';
+            hb.putInt(0, t.getRootBlock());
+            hb.putInt(4, t.getSizeInBlocks());
+            hb.put(8, kfmt);
+            hb.put(9, ktype);
+            // skip 2 bytes (10,11)
+            hb.putShort(12, (short) t.getKeyLength());
+            hb.putShort(14, (short) t.getKeysPerBlock());
+            hb.putShort(16, (short) t.getSecondaryKeyType());
+            hb.putShort(18, (short) t.getKeyItemLength());
+            // byte 20: reserved; byte 21: unique flag
+            hb.put(21, t.isUnique() ? (byte) 1 : (byte) 0);
+            hb.put(22, (byte) t.levels);
+            // Write expression starting at byte 24
+            byte[] exprBytes = expression.toUpperCase().getBytes(StandardCharsets.UTF_8);
+            for (int i = 0; i < exprBytes.length && 24 + i < BLOCK_SIZE; i++) {
+                hb.put(24 + i, exprBytes[i]);
+            }
+        }
+        hb.position(0);
+        hb.limit(BLOCK_SIZE);
+        ch.position((long) BLOCK_SIZE * t.getHeaderBlock());
+        while (hb.hasRemaining()) {
+            ch.write(hb);
+        }
+    }
+
+    /**
+     * Writes the MDX file header and tag descriptor area.
+     *
+     * @throws IOException if an I/O error occurs
+     */
+    void writeHeader() throws IOException {
+        FileChannel ch = randomAccessFile.getChannel();
+        // Header is 544 bytes + tagsInUse * tagLength bytes
+        int headerSize = 544 + keysInTag * tagLength;
+        ByteBuffer hb = ByteBuffer.allocate(headerSize).order(ByteOrder.LITTLE_ENDIAN);
+
+        Calendar cal = Calendar.getInstance();
+        hb.put(0, (byte) 2); // version
+        hb.put(1, (byte) (cal.get(Calendar.YEAR) - 2000));
+        hb.put(2, (byte) (cal.get(Calendar.MONTH) + 1));
+        hb.put(3, (byte) cal.get(Calendar.DAY_OF_MONTH));
+
+        // DBF name: 16 bytes, zero-padded
+        byte[] nameBytes = dbfName.getBytes(StandardCharsets.UTF_8);
+        for (int i = 0; i < 16; i++) {
+            hb.put(4 + i, i < nameBytes.length ? nameBytes[i] : (byte) 0);
+        }
+
+        hb.putShort(20, (short) blockSizeMultiplier);
+        hb.putShort(22, (short) nodeSize);
+        hb.put(24, production ? (byte) 1 : (byte) 0);
+        hb.put(25, (byte) keysInTag);
+        hb.put(26, (byte) tagLength);
+        // byte 27: reserved
+        hb.putShort(28, (short) tagsInUse);
+        // bytes 30,31: reserved
+        hb.putInt(32, numberOfBlocks);
+        hb.putInt(36, firstFreeBlock);
+        hb.putInt(40, availableBlock);
+        // Last update date at bytes 44-46
+        hb.put(44, (byte) (cal.get(Calendar.YEAR) - 2000));
+        hb.put(45, (byte) (cal.get(Calendar.MONTH) + 1));
+        hb.put(46, (byte) cal.get(Calendar.DAY_OF_MONTH));
+
+        // Tag descriptors starting at byte 544
+        for (int i = 0; i < tags.length; i++) {
+            Tag t = tags[i];
+            int base = 544 + i * tagLength;
+            hb.putInt(base, t.getHeaderBlock());
+            // Name: bytes 4..13 (10-byte fixed field, zero-padded)
+            byte[] nb = t.getName().getBytes(StandardCharsets.UTF_8);
+            for (int j = 0; j < 10; j++) {
+                hb.put(base + 4 + j, j < nb.length ? nb[j] : (byte) 0);
+            }
+            // byte 14: reserved (zero, aligns reader to position 15 after name)
+            hb.put(base + 14, (byte) 0);
+            // byte 15: keyFormat
+            byte kfmt = (byte) (0x10 | (t.isDescending() ? 0x08 : 0) | (t.isUnique() ? 0x40 : 0));
+            hb.put(base + 15, kfmt);
+            hb.put(base + 16, (byte) (i > 0 ? i - 1 : 0));   // leftTag
+            hb.put(base + 17, (byte) (i + 1 < tags.length ? i + 1 : 0)); // rightTag
+            hb.put(base + 18, (byte) 0); // backwardTag
+            // byte 19: reserved (skip)
+            hb.put(base + 19, (byte) 0);
+            // byte 20: keyType
+            byte ktype = (t.getDataType() == IndexDataType.NUMERIC) ? (byte) 'N' : (byte) 'C';
+            hb.put(base + 20, ktype);
+        }
+
+        hb.position(0);
+        ch.position(0);
+        while (hb.hasRemaining()) {
+            ch.write(hb);
+        }
+    }
+
+    /** Holds the result of a B-tree node split. */
+    private static class SplitResult {
+        final byte[] promotedKey;
+        final byte[] rightMaxKey;
+        final int rightBlock;
+
+        SplitResult(byte[] promotedKey, byte[] rightMaxKey, int rightBlock) {
+            this.promotedKey = promotedKey;
+            this.rightMaxKey = rightMaxKey;
+            this.rightBlock = rightBlock;
+        }
     }
 }

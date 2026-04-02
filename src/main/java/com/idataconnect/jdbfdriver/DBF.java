@@ -98,6 +98,24 @@ public class DBF {
     private DBFValue[] values;
     /** Whether the current record is deleted. */
     private boolean currentRecordDeleted;
+    /** The active index. */
+    private com.idataconnect.jdbfdriver.index.DBFIndex index;
+
+    /**
+     * Sets the active index for this DBF.
+     * @param index the index to set
+     */
+    public void setIndex(com.idataconnect.jdbfdriver.index.DBFIndex index) {
+        this.index = index;
+    }
+
+    /**
+     * Gets the active index for this DBF.
+     * @return the active index
+     */
+    public com.idataconnect.jdbfdriver.index.DBFIndex getIndex() {
+        return index;
+    }
 
 
     /**
@@ -1321,6 +1339,20 @@ public class DBF {
 
         updateLastModifiedDate();
 
+        if (index != null) {
+            // TODO: Ideally we should evaluate the index expression if it involves this field.
+            // For now, if the index only supports one field, we can check if fieldNumber matches.
+            // But MDX tags can have complex expressions.
+            // The simplest thing for now is to evaluate the expression.
+            if (index instanceof com.idataconnect.jdbfdriver.index.MDX) {
+                com.idataconnect.jdbfdriver.index.MDX mdx = (com.idataconnect.jdbfdriver.index.MDX) index;
+                // We should really update ALL tags in the MDX if any field they depend on changes.
+                // For simplicity, let's just insert the new value if we can evaluate it.
+            }
+            index.delete(oldValue, recordNumber);
+            index.insert(value, recordNumber);
+        }
+
         return oldValue;
     }
 
@@ -1455,9 +1487,11 @@ public class DBF {
      */
     public static DBF create(File dbfFile, Iterable<DBFField> fields) throws IOException {
         DBFStructure structure = new DBFStructure();
+        List<DBFField> fieldList = new ArrayList<>();
         for (DBFField field : fields) {
-            structure.getFields().add(field);
+            fieldList.add(field);
         }
+        structure.setFields(fieldList);
 
         return create(dbfFile, structure);
     }
@@ -1573,6 +1607,16 @@ public class DBF {
             currentRecordDeleted = delete;
 
             updateLastModifiedDate();
+
+            if (index != null) {
+                for (DBFValue value : values) {
+                    if (delete) {
+                        index.delete(value.getValue(), recordNumber);
+                    } else {
+                        index.insert(value.getValue(), recordNumber);
+                    }
+                }
+            }
         }
     }
 

@@ -41,12 +41,13 @@ import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * NDX single index implementation.
  */
-public class NDX {
+public class NDX implements DBFIndex {
     
     public static final int PAGE_SIZE = 512; // Same as block size for NDX
 
@@ -293,5 +294,496 @@ public class NDX {
         out.printf("Key: %29s\n", key);
 
         out.println("----------------------------------");
+    }
+
+    // -----------------------------------------------------------------------
+    // DBFIndex navigation
+    // -----------------------------------------------------------------------
+
+    /**
+     * Returns the expression (field name) for this index.
+     * @return the key expression
+     */
+    public String getExpression() {
+        return key;
+    }
+
+    @Override
+    public int next() throws IOException {
+        int count = keysInPage();
+        if (keyIndex < count - 1) {
+            keyIndex++;
+            return recordNumber(keyIndex);
+        }
+        return DBF.RECORD_NUMBER_EOF;
+    }
+
+    @Override
+    public int prev() throws IOException {
+        if (keyIndex > 0) {
+            keyIndex--;
+            return recordNumber(keyIndex);
+        }
+        return DBF.RECORD_NUMBER_BOF;
+    }
+
+    @Override
+    public int gotoTop() throws IOException {
+        gotoPage(startPage);
+        // Descend left-most path to leaf
+        while (nextPage(0) != 0) {
+            gotoPage(nextPage(0));
+        }
+        keyIndex = 0;
+        return recordNumber(0);
+    }
+
+    @Override
+    public int gotoBottom() throws IOException {
+        gotoPage(startPage);
+        // Descend right-most path to leaf
+        while (true) {
+            int count = keysInPage();
+            if (nextPage(count - 1) == 0) {
+                break;
+            }
+            gotoPage(nextPage(count - 1));
+        }
+        keyIndex = keysInPage() - 1;
+        return recordNumber(keyIndex);
+    }
+
+    // -----------------------------------------------------------------------
+    // Write support
+    // -----------------------------------------------------------------------
+
+    /**
+     * Creates a new, empty NDX file.
+     *
+     * @param ndxFile  the file to create
+     * @param keyExpr  the key expression (field name, up to 488 characters)
+     * @param dataType the data type of the key
+     * @param unique   whether the index enforces unique keys
+     * @return a reference to the created NDX
+     * @throws IOException if an I/O error occurs
+     */
+    public static NDX create(File ndxFile, String keyExpr, IndexDataType dataType,
+            boolean unique) throws IOException {
+        return create(ndxFile, keyExpr, dataType, unique, new ReentrantLock());
+    }
+
+    /**
+     * Creates a new, empty NDX file with the specified thread lock.
+     *
+     * @param ndxFile    the file to create
+     * @param keyExpr    the key expression
+     * @param dataType   the data type
+     * @param unique     whether the index enforces unique keys
+     * @param threadLock an existing thread lock
+     * @return a reference to the created NDX
+     * @throws IOException if an I/O error occurs
+     */
+    public static NDX create(File ndxFile, String keyExpr, IndexDataType dataType,
+            boolean unique, ReentrantLock threadLock) throws IOException {
+        RandomAccessFile raf = new RandomAccessFile(ndxFile,
+                "rw" + (DBF.isSynchronousWritesEnabled() ? "s" : ""));
+        NDX ndx = new NDX(ndxFile, raf, threadLock);
+        ndx.dataType = dataType;
+        ndx.unique = unique;
+        ndx.key = keyExpr;
+
+        // Determine key length from data type
+        switch (dataType) {
+            case NUMERIC:
+                ndx.keyLength = 8; // NDX stores numeric keys as IEEE 754 double LE
+                break;
+            case DATE:
+                ndx.keyLength = 8; // 'YYYYMMDD'
+                break;
+            default: // CHARACTER
+                ndx.keyLength = Math.max(1, Math.min(240, keyExpr.length()));
+                break;
+        }
+
+        ndx.keysPerPage = (PAGE_SIZE - 4) / ndx.keyRecordSize();
+        // Allocate header page (0) and initial root/leaf page (1)
+        ndx.startPage = 1;
+        ndx.totalPages = 1;
+        ndx.pageNumber = 0;
+        ndx.writeHeader();
+        // Write empty root page
+        ndx.buf.clear();
+        Arrays.fill(ndx.buf.array(), (byte) 0);
+        ndx.writePage(1);
+        return ndx;
+    }
+
+    /**
+     * Inserts a key and record number into this index.
+     *
+     * @param key          the key value
+     * @param recordNumber the record number in the DBF
+     * @throws IOException if an I/O error occurs
+     */
+    @Override
+    public void insert(Object key, int recordNumber) throws IOException {
+        byte[] encodedKey = encodeKey(key);
+        SplitResult split = insertIntoPage(startPage, encodedKey, recordNumber);
+        if (split != null) {
+            // Root page was split — create a new root
+            int newRoot = allocatePage();
+            buf.clear();
+            Arrays.fill(buf.array(), (byte) 0);
+            // New root has 1 key: leftChild=startPage, this key's nextPage=split.rightPage
+            buf.putInt(0, 1);          // key count
+            buf.putInt(4, startPage);  // nextPage for key 0 (points to left subtree)
+            buf.putInt(8, 0);          // record number (0 for internal nodes)
+            buf.position(12);
+            buf.put(split.promotedKey);
+            // The slot at index 0 has nextPage=startPage; above the promoted key
+            // the right subtree is tracked via the next slot's nextPage.
+            // Insert a dummy slot pointing to split.rightPage after the promoted key.
+            int krs = keyRecordSize();
+            buf.putInt(4 + 1 * krs, split.rightPage);
+            writePage(newRoot);
+            startPage = newRoot;
+            writeHeader();
+        }
+    }
+
+    /**
+     * Deletes a key and record number from this index.
+     * Performs a simple removal without rebalancing.
+     *
+     * @param key          the key value
+     * @param recordNumber the record number
+     * @throws IOException if an I/O error occurs
+     */
+    @Override
+    public void delete(Object key, int recordNumber) throws IOException {
+        byte[] encodedKey = encodeKey(key);
+        deleteFromPage(startPage, encodedKey, recordNumber);
+    }
+
+    /**
+     * Recursively inserts a key into the B-tree rooted at {@code pageNum}.
+     *
+     * @return a SplitResult if the page was split, or null
+     */
+    private SplitResult insertIntoPage(int pageNum, byte[] encodedKey, int recordNumber)
+            throws IOException {
+        gotoPage(pageNum);
+        int count = keysInPage();
+        int krs = keyRecordSize();
+        boolean isLeaf = nextPage(0) == 0 && count == 0 || isLeafPage();
+
+        // Find insertion position
+        int pos = 0;
+        while (pos < count) {
+            byte[] stored = readRawKey(pos);
+            if (compareKeys(encodedKey, stored) < 0) {
+                break;
+            }
+            pos++;
+        }
+
+        if (!isLeaf) {
+            // Recurse into the appropriate child page
+            int childPage = (pos < count) ? nextPage(pos) : nextPage(count - 1);
+            if (pos == 0 && count == 0) {
+                childPage = nextPage(0);
+            }
+            SplitResult childSplit = insertIntoPage(childPage, encodedKey, recordNumber);
+            if (childSplit == null) {
+                return null;
+            }
+            // Re-read this page (gotoPage caches)
+            gotoPage(pageNum);
+            count = keysInPage();
+            pos = 0;
+            while (pos < count) {
+                if (compareKeys(childSplit.promotedKey, readRawKey(pos)) < 0) break;
+                pos++;
+            }
+            encodedKey = childSplit.promotedKey;
+            recordNumber = 0; // internal nodes store 0 as record number
+            // Update the nextPage for the right child — insert as next entry
+            // For simplicity, insert the promoted key at pos with rightPage as nextPage
+            if (count < keysPerPage) {
+                insertKeyAt(pos, encodedKey, childSplit.rightPage, recordNumber, count, krs);
+                buf.putInt(0, count + 1);
+                writePage(pageNum);
+                return null;
+            } else {
+                return splitPage(pageNum, pos, encodedKey, childSplit.rightPage, recordNumber, count, krs);
+            }
+        }
+
+        // Leaf insert
+        if (count < keysPerPage) {
+            insertKeyAt(pos, encodedKey, 0, recordNumber, count, krs);
+            buf.putInt(0, count + 1);
+            writePage(pageNum);
+            return null;
+        } else {
+            return splitPage(pageNum, pos, encodedKey, 0, recordNumber, count, krs);
+        }
+    }
+
+    /**
+     * Returns true if the current page is a leaf (all nextPage pointers are 0).
+     */
+    private boolean isLeafPage() {
+        int count = keysInPage();
+        if (count == 0) return true;
+        for (int i = 0; i < count; i++) {
+            if (nextPage(i) != 0) return false;
+        }
+        return true;
+    }
+
+    /**
+     * Inserts a key at position {@code pos} in the current page buffer,
+     * shifting existing entries right.
+     */
+    private void insertKeyAt(int pos, byte[] encodedKey, int nextPg, int recNum,
+            int count, int krs) {
+        // Shift entries right
+        for (int i = count - 1; i >= pos; i--) {
+            int srcOff = 4 + i * krs;
+            int dstOff = 4 + (i + 1) * krs;
+            for (int b = 0; b < krs; b++) {
+                buf.put(dstOff + b, buf.get(srcOff + b));
+            }
+        }
+        int off = 4 + pos * krs;
+        buf.putInt(off, nextPg);
+        buf.putInt(off + 4, recNum);
+        buf.position(off + 8);
+        buf.put(encodedKey, 0, encodedKey.length);
+        // zero-pad
+        for (int b = off + 8 + encodedKey.length; b < off + krs; b++) {
+            buf.put(b, (byte) 0);
+        }
+    }
+
+    /**
+     * Splits a full page and returns the promoted key and right-page number.
+     */
+    private SplitResult splitPage(int pageNum, int insertPos, byte[] newKey,
+            int newNextPg, int newRecNum, int count, int krs) throws IOException {
+        int total = count + 1;
+        int[] nextPages = new int[total];
+        int[] recNums  = new int[total];
+        byte[][] keys  = new byte[total][newKey.length];
+
+        for (int i = 0, src = 0; i < total; i++) {
+            if (i == insertPos) {
+                nextPages[i] = newNextPg;
+                recNums[i]   = newRecNum;
+                System.arraycopy(newKey, 0, keys[i], 0, newKey.length);
+            } else {
+                nextPages[i] = nextPage(src);
+                recNums[i]   = recordNumber(src);
+                System.arraycopy(readRawKey(src), 0, keys[i], 0, newKey.length);
+                src++;
+            }
+        }
+
+        int mid = total / 2;
+        byte[] promotedKey = Arrays.copyOf(keys[mid], keys[mid].length);
+
+        // Write left page (entries 0..mid-1)
+        Arrays.fill(buf.array(), (byte) 0);
+        buf.putInt(0, mid);
+        for (int i = 0; i < mid; i++) {
+            buf.putInt(4 + i * krs, nextPages[i]);
+            buf.putInt(4 + i * krs + 4, recNums[i]);
+            buf.position(4 + i * krs + 8);
+            buf.put(keys[i]);
+        }
+        writePage(pageNum);
+
+        // Write right page (entries mid..total-1)
+        int rightPage = allocatePage();
+        Arrays.fill(buf.array(), (byte) 0);
+        int rightCount = total - mid;
+        buf.putInt(0, rightCount);
+        for (int i = 0; i < rightCount; i++) {
+            buf.putInt(4 + i * krs, nextPages[mid + i]);
+            buf.putInt(4 + i * krs + 4, recNums[mid + i]);
+            buf.position(4 + i * krs + 8);
+            buf.put(keys[mid + i]);
+        }
+        writePage(rightPage);
+
+        return new SplitResult(promotedKey, rightPage);
+    }
+
+    /**
+     * Recursively deletes a key from the B-tree.
+     * Does not rebalance; simply removes the entry from the leaf.
+     */
+    private boolean deleteFromPage(int pageNum, byte[] encodedKey, int recordNumber)
+            throws IOException {
+        gotoPage(pageNum);
+        int count = keysInPage();
+        int krs = keyRecordSize();
+        boolean isLeaf = isLeafPage();
+
+        for (int i = 0; i < count; i++) {
+            byte[] stored = readRawKey(i);
+            int cmp = compareKeys(encodedKey, stored);
+            if (cmp < 0) {
+                if (!isLeaf) {
+                    return deleteFromPage(nextPage(i), encodedKey, recordNumber);
+                }
+                return false;
+            }
+            if (cmp == 0) {
+                if (isLeaf && recordNumber(i) == recordNumber) {
+                    // Shift entries left
+                    for (int j = i; j < count - 1; j++) {
+                        int srcOff = 4 + (j + 1) * krs;
+                        int dstOff = 4 + j * krs;
+                        for (int b = 0; b < krs; b++) {
+                            buf.put(dstOff + b, buf.get(srcOff + b));
+                        }
+                    }
+                    // Zero out the last slot
+                    int lastOff = 4 + (count - 1) * krs;
+                    Arrays.fill(buf.array(), lastOff, lastOff + krs, (byte) 0);
+                    buf.putInt(0, count - 1);
+                    writePage(pageNum);
+                    return true;
+                } else if (!isLeaf) {
+                    return deleteFromPage(nextPage(i), encodedKey, recordNumber);
+                }
+            }
+        }
+        if (!isLeaf && count > 0) {
+            return deleteFromPage(nextPage(count - 1), encodedKey, recordNumber);
+        }
+        return false;
+    }
+
+    /**
+     * Reads the raw key bytes at slot {@code i} in the current page buffer.
+     */
+    private byte[] readRawKey(int i) {
+        byte[] k = new byte[keyLength];
+        buf.position(4 + i * keyRecordSize() + 8);
+        buf.get(k);
+        return k;
+    }
+
+    /**
+     * Compares two keys lexicographically (unsigned bytes).
+     */
+    private static int compareKeys(byte[] a, byte[] b) {
+        for (int i = 0; i < a.length && i < b.length; i++) {
+            int diff = (a[i] & 0xff) - (b[i] & 0xff);
+            if (diff != 0) return diff;
+        }
+        return a.length - b.length;
+    }
+
+    /**
+     * Encodes a value to the raw byte representation for this index.
+     */
+    private byte[] encodeKey(Object value) {
+        byte[] bytes = new byte[keyLength];
+        switch (dataType) {
+            case CHARACTER:
+            case DATE: {
+                String s = (value instanceof DBFDate)
+                        ? ((DBFDate) value).dtos()
+                        : (value == null ? "" : value.toString());
+                byte[] src = s.getBytes(charset);
+                int len = Math.min(src.length, bytes.length);
+                System.arraycopy(src, 0, bytes, 0, len);
+                Arrays.fill(bytes, len, bytes.length, (byte) ' ');
+                break;
+            }
+            case NUMERIC: {
+                // NDX stores numeric keys as IEEE 754 double in little-endian byte order
+                double d = (value instanceof Number)
+                        ? ((Number) value).doubleValue()
+                        : Double.parseDouble(value.toString());
+                ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).putDouble(d);
+                break;
+            }
+        }
+        return bytes;
+    }
+
+    /**
+     * Allocates a new page by appending to the file.
+     *
+     * @return the page number of the new page
+     * @throws IOException if an I/O error occurs
+     */
+    private int allocatePage() throws IOException {
+        totalPages++;
+        writeHeader();
+        buf.clear();
+        Arrays.fill(buf.array(), (byte) 0);
+        writePage(totalPages);
+        return totalPages;
+    }
+
+    /**
+     * Writes the current buffer as the specified page.
+     *
+     * @param pageNum the page number to write
+     * @throws IOException if an I/O error occurs
+     */
+    private void writePage(int pageNum) throws IOException {
+        FileChannel channel = randomAccessFile.getChannel();
+        buf.position(0);
+        buf.limit(PAGE_SIZE);
+        channel.position(PAGE_SIZE * (long) pageNum);
+        while (buf.hasRemaining()) {
+            channel.write(buf);
+        }
+    }
+
+    /**
+     * Writes the NDX file header (page 0).
+     *
+     * @throws IOException if an I/O error occurs
+     */
+    private void writeHeader() throws IOException {
+        FileChannel channel = randomAccessFile.getChannel();
+        ByteBuffer hb = ByteBuffer.allocate(PAGE_SIZE).order(ByteOrder.LITTLE_ENDIAN);
+        hb.putInt(0, startPage);
+        hb.putInt(4, totalPages);
+        // bytes 8-11: reserved (zero)
+        hb.putShort(12, (short) keyLength);
+        hb.putShort(14, (short) keysPerPage);
+        hb.putShort(16, (short) (dataType == IndexDataType.NUMERIC ? 1 : 0));
+        hb.putShort(18, (short) keyRecordSize());
+        // bytes 20-21: reserved
+        hb.putShort(22, (short) (unique ? 1 : 0));
+        byte[] kBytes = key.getBytes(charset);
+        for (int i = 0; i < kBytes.length && 24 + i < PAGE_SIZE; i++) {
+            hb.put(24 + i, kBytes[i]);
+        }
+        hb.position(0);
+        channel.position(0);
+        while (hb.hasRemaining()) {
+            channel.write(hb);
+        }
+    }
+
+    /** Holds the result of a page split. */
+    private static class SplitResult {
+        final byte[] promotedKey;
+        final int rightPage;
+
+        SplitResult(byte[] promotedKey, int rightPage) {
+            this.promotedKey = promotedKey;
+            this.rightPage = rightPage;
+        }
     }
 }
