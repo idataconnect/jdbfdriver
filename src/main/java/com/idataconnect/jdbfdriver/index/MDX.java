@@ -115,6 +115,7 @@ public class MDX implements DBFIndex {
         private int keysPerBlock;
         private int secondaryKeyType;
         private int keyItemLength;
+        private String expression;
         /** Number of levels in the B-tree for this tag. */
         int levels = 1;
 
@@ -148,6 +149,22 @@ public class MDX implements DBFIndex {
          */
         private void setName(String name) {
             this.name = name;
+        }
+
+        /**
+         * Gets the expression associated with this tag.
+         * @return the expression
+         */
+        public String getExpression() {
+            return expression;
+        }
+
+        /**
+         * Sets the expression associated with this tag.
+         * @param expression the expression to set
+         */
+        public void setExpression(String expression) {
+            this.expression = expression;
         }
 
         /**
@@ -526,6 +543,18 @@ public class MDX implements DBFIndex {
             if ((buf.get() != 0) != tags[tagIndex].isUnique()) {
                 throw new IOException("Unique flag in header != unique flag in tag descriptor: Key Format=" + keyFormat);
             }
+            tags[tagIndex].levels = buf.get() & 0xff;
+
+            // Read expression starting at byte 24
+            buf.position(24);
+            byte[] exprBytes = new byte[BLOCK_SIZE - 24];
+            buf.get(exprBytes);
+            for (i = 0; i < exprBytes.length; i++) {
+                if (exprBytes[i] == 0) {
+                    break;
+                }
+            }
+            tags[tagIndex].setExpression(new String(exprBytes, 0, i, StandardCharsets.UTF_8).trim());
         }
     }
 
@@ -806,6 +835,22 @@ public class MDX implements DBFIndex {
      */
     public void close() throws IOException {
         randomAccessFile.close();
+    }
+
+    /**
+     * Gets the currently active tag.
+     * @return the active tag
+     */
+    public Tag getTag() {
+        return tag;
+    }
+
+    /**
+     * Gets all tags contained in this MDX index.
+     * @return the array of tags
+     */
+    public Tag[] getTags() {
+        return tags;
     }
 
     /**
@@ -1094,6 +1139,7 @@ public class MDX implements DBFIndex {
 
         Tag t = new Tag();
         t.setName(tagName.toUpperCase());
+        t.setExpression(expression);
         t.setDataType(dataType);
         t.setUnique(unique);
         t.setDescending(descending);

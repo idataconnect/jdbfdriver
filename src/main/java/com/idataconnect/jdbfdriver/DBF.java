@@ -40,8 +40,10 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.GregorianCalendar;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -78,6 +80,10 @@ public class DBF {
     private static boolean synchronousWritesEnabled = false;
     /** Whether thread safety in the library is enabled. Default <em>false</em>. */
     private static boolean threadSafetyEnabled = false;
+
+    /** The expression evaluator. */
+    private final com.idataconnect.jdbfdriver.index.ExpressionEvaluator expressionEvaluator =
+            new com.idataconnect.jdbfdriver.index.JSR233ExpressionEvaluator();
 
     // buf needs to be at least 512 bytes. A larger buffer can result in greater
     // performance, but keep in mind that this buffer is never freed until
@@ -1059,6 +1065,111 @@ public class DBF {
     }
 
     /**
+     * Evaluates the given index expression using the Salinas script engine.
+     * @param expression the expression to evaluate
+     * @return the result of the evaluation, or <code>null</code> if it failed
+     */
+    private Object evaluateExpression(String expression) {
+        if (expression == null || expression.isEmpty()) {
+            return null;
+        }
+        try {
+            return expressionEvaluator.evaluate(expression, this);
+        } catch (Exception e) {
+            // Fallback for simple field names if the script engine is missing or fails.
+            int fieldNum = getFieldNumberByName(expression);
+            if (fieldNum > 0) {
+                try {
+                    return getValue(fieldNum).getValue();
+                } catch (Exception ignored) {}
+            }
+            log.log(Level.WARNING, "Error evaluating expression [" + expression + "]: " + e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Gets the current index keys for all tags in the active index.
+     * @return a map of tag names to key values
+     */
+    private Map<String, Object> getIndexKeys() {
+        Map<String, Object> keys = new HashMap<>();
+        if (index instanceof com.idataconnect.jdbfdriver.index.MDX) {
+            com.idataconnect.jdbfdriver.index.MDX mdx = (com.idataconnect.jdbfdriver.index.MDX) index;
+            for (com.idataconnect.jdbfdriver.index.MDX.Tag tag : mdx.getTags()) {
+                keys.put(tag.getName(), evaluateExpression(tag.getExpression()));
+            }
+        } else if (index instanceof com.idataconnect.jdbfdriver.index.NDX) {
+            com.idataconnect.jdbfdriver.index.NDX ndx = (com.idataconnect.jdbfdriver.index.NDX) index;
+            keys.put("NDX", evaluateExpression(ndx.getExpression()));
+        }
+        return keys;
+    }
+
+    /**
+     * Updates the active index for the current record.
+     * @param oldKeys the keys before the update
+     * @param oldValue the old value of the field (for simple indexes)
+     * @param newValue the new value of the field (for simple indexes)
+     */
+    private void updateIndexes(Map<String, Object> oldKeys, Object oldValue, Object newValue) {
+        if (index == null) {
+            return;
+        }
+
+        if (index instanceof com.idataconnect.jdbfdriver.index.MDX) {
+            com.idataconnect.jdbfdriver.index.MDX mdx = (com.idataconnect.jdbfdriver.index.MDX) index;
+            com.idataconnect.jdbfdriver.index.MDX.Tag originalTag = mdx.getTag();
+            for (com.idataconnect.jdbfdriver.index.MDX.Tag tag : mdx.getTags()) {
+                Object oldKey = oldKeys.get(tag.getName());
+                Object newKey = evaluateExpression(tag.getExpression());
+                if (oldKey != null || newKey != null) {
+                    if (oldKey == null || !oldKey.equals(newKey)) {
+                        try {
+                            mdx.setTag(tag);
+                            if (oldKey != null) {
+                                mdx.delete(oldKey, recordNumber);
+                            }
+                            if (newKey != null) {
+                                mdx.insert(newKey, recordNumber);
+                            }
+                        } catch (IOException e) {
+                            log.log(Level.WARNING, "Error updating MDX index tag [" + tag.getName() + "]: " + e.getMessage());
+                        }
+                    }
+                }
+            }
+            if (originalTag != null) {
+                mdx.setTag(originalTag);
+            }
+        } else if (index instanceof com.idataconnect.jdbfdriver.index.NDX) {
+            com.idataconnect.jdbfdriver.index.NDX ndx = (com.idataconnect.jdbfdriver.index.NDX) index;
+            Object oldKey = oldKeys.get("NDX");
+            Object newKey = evaluateExpression(ndx.getExpression());
+            if (oldKey == null || !oldKey.equals(newKey)) {
+                try {
+                    if (oldKey != null) {
+                        ndx.delete(oldKey, recordNumber);
+                    }
+                    if (newKey != null) {
+                        ndx.insert(newKey, recordNumber);
+                    }
+                } catch (IOException e) {
+                    log.log(Level.WARNING, "Error updating NDX index: " + e.getMessage());
+                }
+            }
+        } else {
+            // Fallback for simple indexes
+            try {
+                index.delete(oldValue, recordNumber);
+                index.insert(newValue, recordNumber);
+            } catch (IOException e) {
+                log.log(Level.WARNING, "Error updating index: " + e.getMessage());
+            }
+        }
+    }
+
+    /**
      * Replaces the specified field's value in the current DBF. Field numbers
      * start at 1.
      * @param fieldNumber the field number
@@ -1083,6 +1194,10 @@ public class DBF {
         }
 
         Object oldValue = values[fieldNumber - 1].getValue();
+
+        // Evaluate index expressions BEFORE updating value
+        Map<String, Object> oldKeys = getIndexKeys();
+
         values[fieldNumber - 1].setValue(value);
         try {
             if (isThreadSafetyEnabled()) {
@@ -1339,19 +1454,7 @@ public class DBF {
 
         updateLastModifiedDate();
 
-        if (index != null) {
-            // TODO: Ideally we should evaluate the index expression if it involves this field.
-            // For now, if the index only supports one field, we can check if fieldNumber matches.
-            // But MDX tags can have complex expressions.
-            // The simplest thing for now is to evaluate the expression.
-            if (index instanceof com.idataconnect.jdbfdriver.index.MDX) {
-                com.idataconnect.jdbfdriver.index.MDX mdx = (com.idataconnect.jdbfdriver.index.MDX) index;
-                // We should really update ALL tags in the MDX if any field they depend on changes.
-                // For simplicity, let's just insert the new value if we can evaluate it.
-            }
-            index.delete(oldValue, recordNumber);
-            index.insert(value, recordNumber);
-        }
+        updateIndexes(oldKeys, oldValue, value);
 
         return oldValue;
     }
@@ -1574,6 +1677,7 @@ public class DBF {
         }
 
         if (currentRecordDeleted != delete) {
+            Map<String, Object> oldKeys = getIndexKeys();
             FileLock lock = null;
             try {
                 if (isThreadSafetyEnabled()) {
@@ -1608,15 +1712,7 @@ public class DBF {
 
             updateLastModifiedDate();
 
-            if (index != null) {
-                for (DBFValue value : values) {
-                    if (delete) {
-                        index.delete(value.getValue(), recordNumber);
-                    } else {
-                        index.insert(value.getValue(), recordNumber);
-                    }
-                }
-            }
+            updateIndexes(oldKeys, null, null);
         }
     }
 
@@ -1799,6 +1895,9 @@ public class DBF {
 
         updateLastModifiedDate();
         gotoRecord(structure.getNumberOfRecords());
+
+        // Update indexes for the new record
+        updateIndexes(new HashMap<String, Object>(), null, null);
     }
 
     /**
