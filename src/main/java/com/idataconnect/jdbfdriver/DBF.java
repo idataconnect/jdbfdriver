@@ -609,6 +609,14 @@ public class DBF {
     }
 
     /**
+     * Gets the file for this DBF.
+     * @return the file
+     */
+    public File getFile() {
+        return dbfFile;
+    }
+
+    /**
      * Gets the structure of the current DBF.
      * @return The structure.
      */
