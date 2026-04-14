@@ -9,6 +9,7 @@ public interface DBFIndex {
 
     /**
      * Makes one step forward and returns the associated record number in the DBF file.
+     *
      * @return the record number in the DBF file
      * @throws IOException if an I/O error occurs
      */
@@ -54,4 +55,20 @@ public interface DBFIndex {
      * @throws IOException if an I/O error occurs
      */
     void delete(Object key, int recordNumber) throws IOException;
+
+    /**
+     * Updates the index for the given DBF's current record.
+     *
+     * @param dbf the DBF instance
+     * @param oldKeys a map of tag/index names to their previous key values
+     * @throws IOException if an I/O error occurs
+     */
+    void update(com.idataconnect.jdbfdriver.DBF dbf, java.util.Map<String, Object> oldKeys) throws IOException;
+
+    /**
+     * Closes the index file and releases any resources.
+     *
+     * @throws IOException if an I/O error occurs
+     */
+    void close() throws IOException;
 }

@@ -266,6 +266,23 @@ public class NDX implements DBFIndex {
      * this NDX file.
      * @throws IOException if an I/O error occurs
      */
+    @Override
+    public void update(DBF dbf, java.util.Map<String, Object> oldKeys) throws IOException {
+        Object oldKey = oldKeys.get("NDX");
+        Object newKey = dbf.evaluateExpression(getExpression());
+        
+        if (oldKey != null || newKey != null) {
+            if (oldKey == null || !oldKey.equals(newKey)) {
+                if (oldKey != null) {
+                    delete(oldKey, dbf.recno());
+                }
+                if (newKey != null) {
+                    insert(newKey, dbf.recno());
+                }
+            }
+        }
+    }
+
     public void close() throws IOException {
         randomAccessFile.close();
     }

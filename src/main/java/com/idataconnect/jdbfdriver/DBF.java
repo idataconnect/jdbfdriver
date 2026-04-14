@@ -30,6 +30,10 @@
  */
 package com.idataconnect.jdbfdriver;
 
+import com.idataconnect.jdbfdriver.index.DBFIndex;
+import com.idataconnect.jdbfdriver.index.IndexDataType;
+import com.idataconnect.jdbfdriver.index.MDX;
+import com.idataconnect.jdbfdriver.index.NDX;
 import java.io.*;
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
@@ -105,13 +109,13 @@ public class DBF {
     /** Whether the current record is deleted. */
     private boolean currentRecordDeleted;
     /** The active index. */
-    private com.idataconnect.jdbfdriver.index.DBFIndex index;
+    private DBFIndex index;
 
     /**
      * Sets the active index for this DBF.
      * @param index the index to set
      */
-    public void setIndex(com.idataconnect.jdbfdriver.index.DBFIndex index) {
+    public void setIndex(DBFIndex index) {
         this.index = index;
     }
 
@@ -119,7 +123,7 @@ public class DBF {
      * Gets the active index for this DBF.
      * @return the active index
      */
-    public com.idataconnect.jdbfdriver.index.DBFIndex getIndex() {
+    public DBFIndex getIndex() {
         return index;
     }
 
@@ -174,6 +178,9 @@ public class DBF {
      * @throws IOException If an I/O error occurs.
      */
     public void close() throws IOException {
+        if (index != null) {
+            index.close();
+        }
         randomAccessFile.close();
     }
 
@@ -697,6 +704,159 @@ public class DBF {
         return gotoRecord(recno() + skipCount);
     }
 
+    public void index(String tagName, String expression, boolean unique, boolean descending) throws IOException {
+        // If we are indexing by tag, we need an MDX.
+        if (!(index instanceof MDX)) {
+            setIndex(getOrOpenMdx());
+        }
+        MDX mdx = (MDX) index;
+
+        try {
+            // 2. Determine Data Type by evaluating first record
+            gotoRecord(1);
+            Object initialVal = expressionEvaluator.evaluate(expression, this);
+            IndexDataType dataType = IndexDataType.CHARACTER;
+            if (initialVal instanceof Number) dataType = IndexDataType.NUMERIC;
+            else if (initialVal instanceof java.util.Date) dataType = IndexDataType.DATE;
+
+            // 3. Add the Tag
+            mdx.addTag(tagName, expression, dataType, unique, descending);
+            mdx.setTag(tagName);
+
+            // 4. Reindex (Populate)
+            int count = getStructure().getNumberOfRecords();
+            for (int i = 1; i <= count; i++) {
+                gotoRecord(i);
+                Object keyVal = expressionEvaluator.evaluate(expression, this);
+                mdx.insert(keyVal, i);
+            }
+
+            // Move back to top
+            gotoRecord(1);
+
+        } catch (Exception ex) {
+            if (ex instanceof IOException) throw (IOException) ex;
+            throw new IOException("Error creating index tag: " + tagName, ex);
+        }
+    }
+
+    public void indexTo(String filename, String expression, boolean unique, boolean descending) throws IOException {
+        if (!filename.toLowerCase().endsWith(".ndx")) {
+            filename += ".ndx";
+        }
+        File ndxFile = new File(filename);
+        if (!ndxFile.isAbsolute()) {
+            ndxFile = new File(currentDirectory + File.separatorChar + filename);
+        }
+
+        try {
+            // 1. Determine Data Type by evaluating first record
+            gotoRecord(1);
+            Object initialVal = expressionEvaluator.evaluate(expression, this);
+            IndexDataType dataType = IndexDataType.CHARACTER;
+            if (initialVal instanceof Number) dataType = IndexDataType.NUMERIC;
+            else if (initialVal instanceof java.util.Date) dataType = IndexDataType.DATE;
+
+            // 2. Create the NDX
+            NDX ndx = NDX.create(ndxFile, expression, dataType, unique);
+            setIndex(ndx);
+
+            // 3. Reindex (Populate)
+            int count = getStructure().getNumberOfRecords();
+            for (int i = 1; i <= count; i++) {
+                gotoRecord(i);
+                Object keyVal = expressionEvaluator.evaluate(expression, this);
+                ndx.insert(keyVal, i);
+            }
+
+            // Move back to top
+            gotoRecord(1);
+
+        } catch (Exception ex) {
+            if (ex instanceof IOException) throw (IOException) ex;
+            throw new IOException("Error creating NDX: " + filename, ex);
+        }
+    }
+
+    /**
+     * Sets the active order for this DBF.
+     * @param order either a Tag name (String), a Tag number (Number), or an NDX filename (String)
+     * @throws IOException if an I/O error occurs
+     */
+    public void setOrder(Object order) throws IOException {
+        if (order == null) {
+            setIndex(null);
+            return;
+        }
+
+        if (order instanceof Number) {
+            int tagIndex = ((Number) order).intValue();
+            if (tagIndex == 0) {
+                setIndex(null);
+                return;
+            }
+            MDX mdx = getOrOpenMdx();
+            if (mdx.setTag(tagIndex - 1).isPresent()) {
+                setIndex(mdx);
+            } else {
+                throw new IOException("Invalid tag index: " + tagIndex);
+            }
+        } else {
+            String name = order.toString();
+            // 1. Try currently set index
+            if (index instanceof MDX) {
+                if (((MDX) index).setTag(name).isPresent()) {
+                    return;
+                }
+            }
+            
+            // 2. Try to get or open production MDX
+            MDX mdx = getOrOpenMdx();
+            if (mdx.setTag(name).isPresent()) {
+                setIndex(mdx);
+                return;
+            }
+            
+            // 3. Try to open as NDX file
+            File ndxFile = new File(name);
+            // Standard NDX fallback extension
+            if (!ndxFile.exists() && !name.toLowerCase().endsWith(".ndx")) {
+                ndxFile = new File(name + ".ndx");
+            }
+            
+            if (ndxFile.exists()) {
+                setIndex(NDX.open(ndxFile, threadLock));
+                return;
+            }
+            
+            throw new IOException("Index tag or file not found: " + name);
+        }
+    }
+
+    protected MDX getOrOpenMdx() throws IOException {
+        if (index instanceof MDX) {
+            return (MDX) index;
+        }
+
+        // Determine MDX filename
+        String path = dbfFile.getAbsolutePath();
+        int dotIndex = path.lastIndexOf('.');
+        String mdxPath = (dotIndex == -1 ? path : path.substring(0, dotIndex)) + ".mdx";
+        File mdxFile = new File(mdxPath);
+
+        if (mdxFile.exists()) {
+            return MDX.open(mdxFile);
+        } else {
+            // Get base name for the MDX internal header
+            String name = dbfFile.getName();
+            int nameDot = name.lastIndexOf('.');
+            if (nameDot != -1) {
+                name = name.substring(0, nameDot);
+            }
+            return MDX.create(mdxFile, name.toUpperCase());
+        }
+    }
+
     /**
      * Reads the record specified by <tt>recordNumber</tt> into memory so its
      * values may be pulled. Record numbers start with 1.
@@ -1077,7 +1237,7 @@ public class DBF {
      * @param expression the expression to evaluate
      * @return the result of the evaluation, or <code>null</code> if it failed
      */
-    private Object evaluateExpression(String expression) {
+    public Object evaluateExpression(String expression) {
         if (expression == null || expression.isEmpty()) {
             return null;
         }
@@ -1125,55 +1285,10 @@ public class DBF {
             return;
         }
 
-        if (index instanceof com.idataconnect.jdbfdriver.index.MDX) {
-            com.idataconnect.jdbfdriver.index.MDX mdx = (com.idataconnect.jdbfdriver.index.MDX) index;
-            com.idataconnect.jdbfdriver.index.MDX.Tag originalTag = mdx.getTag();
-            for (com.idataconnect.jdbfdriver.index.MDX.Tag tag : mdx.getTags()) {
-                Object oldKey = oldKeys.get(tag.getName());
-                Object newKey = evaluateExpression(tag.getExpression());
-                if (oldKey != null || newKey != null) {
-                    if (oldKey == null || !oldKey.equals(newKey)) {
-                        try {
-                            mdx.setTag(tag);
-                            if (oldKey != null) {
-                                mdx.delete(oldKey, recordNumber);
-                            }
-                            if (newKey != null) {
-                                mdx.insert(newKey, recordNumber);
-                            }
-                        } catch (IOException e) {
-                            log.log(Level.WARNING, "Error updating MDX index tag [" + tag.getName() + "]: " + e.getMessage());
-                        }
-                    }
-                }
-            }
-            if (originalTag != null) {
-                mdx.setTag(originalTag);
-            }
-        } else if (index instanceof com.idataconnect.jdbfdriver.index.NDX) {
-            com.idataconnect.jdbfdriver.index.NDX ndx = (com.idataconnect.jdbfdriver.index.NDX) index;
-            Object oldKey = oldKeys.get("NDX");
-            Object newKey = evaluateExpression(ndx.getExpression());
-            if (oldKey == null || !oldKey.equals(newKey)) {
-                try {
-                    if (oldKey != null) {
-                        ndx.delete(oldKey, recordNumber);
-                    }
-                    if (newKey != null) {
-                        ndx.insert(newKey, recordNumber);
-                    }
-                } catch (IOException e) {
-                    log.log(Level.WARNING, "Error updating NDX index: " + e.getMessage());
-                }
-            }
-        } else {
-            // Fallback for simple indexes
-            try {
-                index.delete(oldValue, recordNumber);
-                index.insert(newValue, recordNumber);
-            } catch (IOException e) {
-                log.log(Level.WARNING, "Error updating index: " + e.getMessage());
-            }
+        try {
+            index.update(this, oldKeys);
+        } catch (IOException e) {
+            log.log(Level.WARNING, "Error updating active index: " + e.getMessage());
         }
     }
 

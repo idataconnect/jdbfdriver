@@ -833,6 +833,30 @@ public class MDX implements DBFIndex {
      * this MDX file.
      * @throws IOException if an I/O error occurs
      */
+    @Override
+    public void update(DBF dbf, java.util.Map<String, Object> oldKeys) throws IOException {
+        Tag originalTag = this.tag;
+        for (Tag tag : tags) {
+            Object oldKey = oldKeys.get(tag.getName());
+            Object newKey = dbf.evaluateExpression(tag.getExpression());
+            
+            if (oldKey != null || newKey != null) {
+                if (oldKey == null || !oldKey.equals(newKey)) {
+                    this.setTag(tag);
+                    if (oldKey != null) {
+                        delete(oldKey, dbf.recno());
+                    }
+                    if (newKey != null) {
+                        insert(newKey, dbf.recno());
+                    }
+                }
+            }
+        }
+        if (originalTag != null) {
+            this.setTag(originalTag);
+        }
+    }
+
     public void close() throws IOException {
         randomAccessFile.close();
     }
@@ -1026,11 +1050,47 @@ public class MDX implements DBFIndex {
     }
 
     /**
-     * Sets the primary (aka master) tag.
-     * @param tag the tag to set as primary
+     * Gets a tag by index.
+     * @param index the index of the tag
+     * @return the optional tag
      */
+    public Optional<Tag> getTag(int index) {
+        if (index >= 0 && index < tags.length) {
+            return Optional.of(tags[index]);
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * Gets a tag by name.
+     * @param tagName the name of the tag
+     * @return the optional tag
+     */
+    public Optional<Tag> getTag(String tagName) {
+        for (Tag t : tags) {
+            if (t.getName().equalsIgnoreCase(tagName)) {
+                return Optional.of(t);
+            }
+        }
+        return Optional.empty();
+    }
+
     public void setTag(Tag tag) {
         this.tag = tag;
+    }
+
+    /**
+     * Sets the primary (aka master) tag, by index.
+     *
+     * @param index the index of the tag
+     * @return the optional tag that was set
+     */
+    public Optional<Tag> setTag(int index) {
+        if (index >= 0 && index < tags.length) {
+            this.tag = tags[index];
+            return Optional.of(tag);
+        }
+        return Optional.empty();
     }
 
     /**
@@ -1041,14 +1101,11 @@ public class MDX implements DBFIndex {
      * @return the optional tag that was set
      */
     public Optional<Tag> setTag(String tagName) {
-        for (Tag t : tags) {
-            if (t.getName().equalsIgnoreCase(tagName)) {
-                this.tag = t;
-                return Optional.of(tag);
-            }
+        Optional<Tag> t = getTag(tagName);
+        if (t.isPresent()) {
+            this.tag = t.get();
         }
-
-        return Optional.empty();
+        return t;
     }
 
     /**

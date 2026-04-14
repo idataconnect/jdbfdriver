@@ -1,54 +1,51 @@
 package com.idataconnect.jdbfdriver.index;
 
-import javax.script.ScriptEngine;
-import javax.script.ScriptEngineManager;
-import javax.script.ScriptException;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.ServiceLoader;
 
 /**
- * JSR-233 based expression evaluator.
+ * An expression evaluator that uses ServiceLoader to find the best available XBaseInterpreter.
  */
 public class JSR233ExpressionEvaluator implements ExpressionEvaluator {
 
-    private final ScriptEngine engine;
+    private final List<XBaseInterpreter> interpreters = new ArrayList<>();
 
     public JSR233ExpressionEvaluator() {
-        ScriptEngineManager manager = new ScriptEngineManager();
-        this.engine = manager.getEngineByName("salinas");
+        // Load interpreters from classpath
+        ServiceLoader<XBaseInterpreter> loader = ServiceLoader.load(XBaseInterpreter.class);
+        for (XBaseInterpreter interpreter : loader) {
+            interpreters.add(interpreter);
+        }
+        
+        // Always add the simple fallback
+        interpreters.add(new SimpleXBaseInterpreter());
+        
+        // Sort by priority (lower is higher)
+        interpreters.sort(Comparator.comparingInt(XBaseInterpreter::getPriority));
     }
 
     @Override
     public Object evaluate(String expression, Object context) throws Exception {
-        if (engine == null) {
-            throw new IllegalStateException("Salinas script engine not found on classpath");
+        if (context instanceof com.idataconnect.jdbfdriver.DBF) {
+            com.idataconnect.jdbfdriver.DBF dbf = (com.idataconnect.jdbfdriver.DBF) context;
+            
+            // Try each interpreter in order
+            Exception lastEx = null;
+            for (XBaseInterpreter interpreter : interpreters) {
+                try {
+                    return interpreter.evaluate(expression, dbf);
+                } catch (Exception e) {
+                    lastEx = e;
+                    // If simple interpreter fails, it probably means it's a complex expression
+                    // and we should keep trying other interpreters
+                }
+            }
+            
+            if (lastEx != null) throw lastEx;
         }
         
-        if (context != null) {
-            // We use reflection to setup a WorkAreaManager and WorkArea because
-            // jdbfdriver cannot depend on salinas-core (circular dependency)
-            try {
-                ClassLoader cl = engine.getClass().getClassLoader();
-                Class<?> wamClass = cl.loadClass("com.idataconnect.salinas.data.WorkAreaManager");
-                Class<?> waClass = cl.loadClass("com.idataconnect.salinas.data.WorkArea");
-                
-                Object wam = wamClass.getConstructor().newInstance();
-                Object wa = waClass.getConstructor(String.class, context.getClass().getClassLoader().loadClass("com.idataconnect.jdbfdriver.DBF")).newInstance("TEMP", context);
-                
-                wamClass.getMethod("use", int.class, waClass).invoke(wam, 1, wa);
-                
-                engine.getContext().setAttribute("salinasWorkAreaManager", wam, javax.script.ScriptContext.ENGINE_SCOPE);
-            } catch (Exception e) {
-                // If reflection fails, we might just proceed and hope the fields are already there
-            }
-        }
-
-        try {
-            return engine.eval(expression);
-        } catch (ScriptException e) {
-            throw new Exception("Error evaluating expression: " + expression, e);
-        }
-    }
-
-    public boolean isAvailable() {
-        return engine != null;
+        throw new Exception("No interpreter found to handle expression: " + expression);
     }
 }
